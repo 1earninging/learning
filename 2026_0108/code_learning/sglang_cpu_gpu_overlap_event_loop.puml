@@ -1,0 +1,58 @@
+@startuml
+title SGLang：CPU/GPU overlap（event_loop_overlap + result_queue）
+
+participant "Scheduler main loop\n(event_loop_overlap)" as LOOP
+participant "recv_requests()" as RECV
+participant "get_next_batch_to_run()" as SCHED
+participant "run_batch(batch)\n(forward stream)" as RUN
+collections "result_queue\n(deque)" as RQ
+participant "process_batch_result(prev)" as PROC
+participant "GPU\nforward stream" as GPU
+participant "CPU\npost-process/stream/free" as CPU
+
+== 核心思想 ==
+note over LOOP
+把一次迭代拆成两段并交错：
+1) 提交当前 batch 到 GPU（RUN）
+2) 处理上一轮 batch 的结果（PROC）
+从而让 CPU 后处理与 GPU forward 重叠。
+end note
+
+loop 每次 scheduler tick
+  LOOP -> RECV: recv_requests() (zmq NOBLOCK)
+  LOOP -> LOOP: process_input_requests(...)
+
+  LOOP -> SCHED: get_next_batch_to_run()
+  SCHED --> LOOP: batch
+
+  alt disable_overlap_for_batch
+    LOOP -> RQ: popleft()
+    RQ --> LOOP: (prev_batch, prev_result)
+    LOOP -> PROC: process_batch_result(prev_batch, prev_result)
+    PROC -> CPU: decode/logprob/stream/free\n(copy_done.synchronize if needed)
+  end
+
+  alt batch exists
+    LOOP -> RUN: run_batch(batch)
+    RUN -> GPU: forward on forward_stream
+    RUN --> LOOP: batch_result (contains copy_done, cpu buffers, etc.)
+    LOOP -> RQ: append((batch.copy(), batch_result))
+  else no batch
+    LOOP -> LOOP: self_check_during_idle()
+  end
+
+  alt last_batch exists and overlap enabled
+    LOOP -> RQ: popleft()
+    RQ --> LOOP: (prev_batch, prev_result)
+    LOOP -> PROC: process_batch_result(prev_batch, prev_result)
+    PROC -> CPU: stream outputs / update cache\n/ release_kv_cache etc.
+  end
+
+  note over LOOP
+采样（launch_batch_sample_if_needed）被放在
+“上一轮处理完成之后”，因为可能依赖上一轮结果（grammar/spec）。
+end note
+end
+
+@enduml
+

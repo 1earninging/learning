@@ -1,0 +1,53 @@
+@startuml
+title SGLang：FutureMap 如何在 overlap 下解决“跨 batch token 依赖”
+
+participant "Scheduler.run_batch\n(overlap branch)" as RUN
+participant "FutureMap" as FM
+participant "ModelWorkerBatch\n(input_ids)" as B
+participant "GPU forward stream" as GPU
+database "Future buffers\n(token_ids_buf / topk_p_buf ...)" as BUF
+
+== 背景 ==
+note over RUN
+overlap 的难点：下一轮 batch 的 input_ids 可能需要
+上一轮刚生成的 token。如果 CPU 等待 token 就会破坏 overlap。
+
+SGLang 的做法：用“负数 token id”当占位符，
+在 GPU 上把占位符替换成真实 token。
+end note
+
+== 本轮：分配 future slot，并把输出写入 FutureMap ==
+RUN -> FM: alloc_future_indices(bs)
+FM --> RUN: future_indices (e.g. [k..k+bs))
+
+RUN -> GPU: forward_batch_generation(model_worker_batch)
+GPU --> RUN: batch_result(next_token_ids on GPU)
+
+RUN -> FM: store_to_map(future_indices, batch_result)
+FM -> BUF: token_ids_buf[interval] = next_token_ids
+
+note over RUN
+把 “本轮输出 token” 映射到一个可索引的 buffer。
+end note
+
+== 把 batch.output_ids 写成占位符（负索引） ==
+RUN -> RUN: batch.output_ids = -future_indices.indices
+
+== 下一轮：在 forward 前 resolve 占位符 ==
+RUN -> FM: resolve_future(model_worker_batch_next)
+FM -> B: _resolve_future_token_ids(input_ids, token_ids_buf)
+
+note right of B
+伪代码：
+if input_ids[i] < 0:
+  input_ids[i] = token_ids_buf[-input_ids[i]]
+end note
+
+note over FM
+resolve 用 torch.where 实现，并可 torch.compile，
+使得“依赖解析”在 GPU 上快速完成，
+避免 CPU 强同步等待 token。
+end note
+
+@enduml
+

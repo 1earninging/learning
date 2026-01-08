@@ -1,0 +1,77 @@
+@startuml
+title MindIE-LLM：PluginManager async_infer 流水线（Python 线程 + 双队列）
+
+participant "Main thread\n(generate_token_async)" as MAIN
+participant "PluginManager" as PM
+collections "output_queue\n(prev results)" as OQ
+collections "input_queue\n(next inputs)" as IQ
+participant "Forward thread\n(forward_loop)" as FWD
+participant "NPU/GPU\nATB backend" as DEV
+
+== 初始化 ==
+note over PM
+async_infer=True 时：
+1) output_queue 预先放一个 empty ModelOutputWrapper
+2) 启动 forward_thread 跑 forward_loop()
+end note
+
+== 每次生成迭代（tick N） ==
+group MAIN: 准备本轮输入 + 取回上一轮结果
+  MAIN -> PM: preprocess + prepare_model_inputs\n(构造 ModelInputWrapper)
+  MAIN -> OQ: get(prev ModelOutputWrapper)\n(timeout=900)
+  OQ --> MAIN: model_output_wrapper (tick N-1)
+
+  MAIN -> PM: _fill_in_model_result(...)\n(用上一轮 sampling_output\n补全本轮输入/命中位置)
+  MAIN -> PM: generator_backend.synchronize()
+
+  MAIN -> IQ: put(ModelInputWrapper tick N)\n(提交本轮 forward 给线程)
+
+  alt 非 prefill 且上一轮也非 prefill
+    MAIN -> MAIN: wait launch_done (<= LAUNCH_DONE_TIMEOUT)
+    note right of MAIN
+    避免“后处理过快”导致与下一轮 forward\n
+    的依赖/资源使用错位。
+    end note
+  end
+
+  MAIN -> PM: postprocess(prev result)\n(输出/更新context/cache)
+  MAIN -> MAIN: postprocess_done.set()
+end
+
+group FWD: forward_loop 线程（消费 tick N，产出 tick N）
+  FWD -> IQ: get(ModelInputWrapper tick N)
+  IQ --> FWD: model_input_wrapper
+
+  FWD -> DEV: forward_from_model_inputs(...)
+  DEV --> FWD: model_output
+
+  FWD -> DEV: sample(...)
+  DEV --> FWD: sampling_output
+
+  alt 正常运行
+    FWD -> FWD: wait model_input_wrapper.postprocess_done\n(确保上一轮 postprocess 完成)
+    FWD -> PM: plugin_verify_manager(...)\n(在 async 模式下放到线程侧做)
+    note right of FWD
+    这里的 wait 是关键同步点：\n
+    forward 线程在 verify/后续步骤前\n
+    等主线程 postprocess 完成。
+    end note
+  else inference_pause
+    note right of FWD
+    pause 时可构造 mock wrapper\n
+    并直接放入 output_queue。
+    end note
+  end
+
+  FWD -> OQ: put(ModelOutputWrapper tick N)\n(包含 launch_done Event)
+end
+
+note over MAIN,FWD
+这个结构等价于：\n
+主线程做 “prev 后处理 + next 输入准备”，\n
+线程做 “本轮 forward+sample”，\n
+两者通过 output_queue/input_queue 交错形成 pipeline。
+end note
+
+@enduml
+

@@ -1,0 +1,112 @@
+@startuml
+title vLLM vs SGLang：CPU/GPU overlap 对比（统一视角）
+
+skinparam ParticipantPadding 20
+skinparam BoxPadding 10
+skinparam sequenceMessageAlign center
+
+participant "Client / Frontend" as C
+
+box "vLLM 路径（EngineCore + Scheduler + Executor）" #EEF7FF
+  participant "EngineCore\n(step_with_batch_queue)" as V_EC
+  participant "Scheduler" as V_SCH
+  participant "ModelExecutor" as V_EXE
+  collections "batch_queue\n(Future deque)" as V_BQ
+end box
+
+box "SGLang 路径（Scheduler 主循环 + overlap）" #F4FFF1
+  participant "Scheduler\n(event_loop_overlap)" as S_LOOP
+  participant "run_batch()\n(forward_stream)" as S_RUN
+  collections "result_queue\n(batch,result)" as S_RQ
+  participant "FutureMap\n(resolve/store)" as S_FM
+end box
+
+participant "GPU" as GPU
+participant "CPU post-process\n(stream/logprob/free)" as CPU
+
+== 场景：连续两轮 tick（体现 overlap） ==
+
+group Tick N（两边都在“准备/提交本轮计算”）
+  C -> V_EC: add_request / wake engine
+  V_EC -> V_SCH: schedule()
+  V_SCH --> V_EC: scheduler_output
+  V_EC -> V_EXE: execute_model(..., non_block=True)
+  V_EXE -> GPU: enqueue forward kernels
+  V_EXE --> V_EC: future
+  V_EC -> V_BQ: enqueue(future, scheduler_output)
+  note right of V_EC
+  vLLM overlap 关键：\n
+  batch_queue 未满时优先 enqueue 并返回，\n
+  不急着 future.result()。
+  end note
+
+  C -> S_LOOP: recv_requests (zmq NOBLOCK)
+  S_LOOP -> S_LOOP: process_input_requests()
+  S_LOOP -> S_LOOP: get_next_batch_to_run()
+  S_LOOP -> S_RUN: run_batch(batch)
+  S_RUN -> S_FM: resolve_future(next_batch_input_ids)\n(把负 token id 占位替换为真 token)
+  S_RUN -> GPU: forward on forward_stream
+  S_RUN --> S_LOOP: batch_result(copy_done, cpu buffers)
+  S_LOOP -> S_RQ: append((batch.copy(), batch_result))
+  note right of S_LOOP
+  SGLang overlap 关键：\n
+  先 launch 当前 batch，\n
+  把结果丢进 result_queue，\n
+  再处理上一轮结果。
+  end note
+end group
+
+group Tick N+1（体现“上一轮结果处理”和“下一轮提交”交错）
+  == vLLM：可能继续填充 queue 或开始取回 ==
+  alt queue 未满 && 最老 future 未完成
+    V_EC -> V_SCH: schedule()  (继续提交下一批)
+    V_EC -> V_EXE: execute_model(..., non_block=True)
+    V_EXE -> GPU: enqueue more kernels
+    V_EC -> V_BQ: enqueue(future,...)
+    note over V_EC
+    CPU 继续 schedule/submit，\n
+    GPU 持续跑，\n
+    形成流水。
+    end note
+  else queue 满 / 需要产出结果
+    V_EC -> V_BQ: pop oldest future
+    V_EC -> V_EC: future.result()  (同步点)
+    V_EC -> V_SCH: update_from_output(...)
+    V_SCH --> V_EC: outputs
+    V_EC -> CPU: 后处理/输出聚合
+    note over V_EC
+    同步点：future.result() 必须等 GPU 完成。\n
+    structured output/spec/grammar 还会引入额外依赖同步。
+    end note
+  end
+
+  == SGLang：launch 当前 batch，同时处理上一轮 result ==
+  S_LOOP -> S_LOOP: get_next_batch_to_run()
+  S_LOOP -> S_RUN: run_batch(batch_{N+1})
+  S_RUN -> S_FM: resolve_future(batch_{N+1}.input_ids)
+  S_RUN -> GPU: forward (stream)
+
+  S_LOOP -> S_RQ: popleft() 取 batch_N 结果
+  S_RQ --> S_LOOP: (batch_N, result_N)
+  S_LOOP -> CPU: process_batch_result(batch_N, result_N)
+  note right of CPU
+  如果 result_N 做了 non_blocking D2H：\n
+  这里通常会 copy_done.synchronize()，\n
+  确保 CPU 读取到完成拷贝的数据。
+  end note
+end group
+
+== 对比要点（同步点与可重叠段） ==
+note over V_EC,S_LOOP
+vLLM：\n
+- overlap 主要来自 “Future + batch_queue” 把阻塞点后移\n
+- 同步点多在 future.result()（以及 structured output/spec 的跨步依赖）\n
+\n
+SGLang：\n
+- overlap 主要来自 “result_queue 交错 + forward_stream + non_blocking D2H + event”\n
+- FutureMap 让“下一轮输入依赖上一轮 token”的解析也在 GPU 上完成\n
+- 同步点多集中在 process_batch_result 阶段（copy_done.synchronize 等）\n
+end note
+
+@enduml
+

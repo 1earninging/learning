@@ -1,0 +1,65 @@
+@startuml
+title MindIE-LLM：现状“双层异步” vs 建议“单一主流水”收敛
+
+skinparam BoxPadding 10
+skinparam ParticipantPadding 18
+
+participant "Client" as C
+participant "Device\n(NPU/GPU)" as DEV
+
+box "现状：双层异步（C++ placeholder + Python pipeline）" #FFF4EA
+  participant "Py PluginManager\n(main thread)" as PM_MAIN
+  participant "Py forward_thread" as PM_FWD
+  collections "Py input_queue/output_queue" as PM_Q
+  participant "C++ Scheduler\n(PLACEHOLDER_TOKEN)" as SCH_CPP
+end box
+
+box "建议：收敛为单一主流水（选择一个层做“真值/推进”）" #EAF4FF
+  participant "Unified Orchestrator\n(single owner)" as ORCH
+  collections "Bounded queue\n(backpressure)" as BQ
+  database "Token future buffer\n(stateful, low-intrusive)" as TBUF
+end box
+
+== 现状：双层异步的典型链路 ==
+C -> PM_MAIN: generate_token_async()
+PM_MAIN -> PM_Q: output_queue.get(prev)\n+ input_queue.put(next)
+PM_FWD -> PM_Q: input_queue.get(next)
+PM_FWD -> DEV: forward+sample (tick N)
+PM_FWD -> PM_Q: output_queue.put(result N)
+PM_MAIN -> PM_MAIN: postprocess(prev)
+
+note right of PM_MAIN
+同步点常见来源：\n
+- generator_backend.synchronize()\n
+- launch_done / postprocess_done 双向等待\n
+end note
+
+SCH_CPP -> SCH_CPP: PrepareNextSchedule()\nAccumulateComputedTokens + AddNextTokenPlaceHolder(-1)
+SCH_CPP -> SCH_CPP: FetchSeqGeneratedTokens()\nReplacePlaceHolderWithToken()
+
+note right of SCH_CPP
+C++ 层也在维护“未决 token”的显式状态：\n
+占位符写入 outputTokenIds，再回填。\n
+这与 Python pipeline 叠加后，\n
+边界更复杂（谁负责一致性？）。
+end note
+
+== 建议：单一主流水（一个地方做推进/回填/同步边界） ==
+C -> ORCH: submit request / poll outputs
+ORCH -> BQ: enqueue work (bounded)
+ORCH -> DEV: submit forward (non-block)
+DEV --> ORCH: completion/event
+
+ORCH -> TBUF: store token futures\n(store/resolve in one place)
+ORCH -> ORCH: postprocess/emit outputs\n(at clear boundaries)
+
+note right of ORCH
+收敛后的目标：\n
+- “推进/回填/同步点”在一个 owner 内完成\n
+- Python/C++ 其中一层退化为纯适配或插件执行\n
+- 用 bounded queue 做 backpressure\n
+- 用独立 token future buffer 降低对 token 容器的侵入\n
+end note
+
+@enduml
+

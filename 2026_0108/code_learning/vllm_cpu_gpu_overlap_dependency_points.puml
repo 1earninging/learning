@@ -1,0 +1,58 @@
+@startuml
+title vLLM：overlap 的同步点（structured output / grammar / spec decode）
+
+participant "EngineCore" as EC
+participant "Scheduler" as SCH
+participant "ModelExecutor" as EXE
+participant "GPU" as GPU
+
+== 典型一步 ==
+EC -> SCH: schedule()
+SCH --> EC: scheduler_output
+
+EC -> EXE: execute_model(..., non_block=True)
+EXE -> GPU: forward kernels
+EXE --> EC: exec_future
+
+note over EC
+如果没有“跨步依赖”，理想情况是：
+尽量将采样也 non_block，并将 Future 入队（batch_queue）。
+end note
+
+alt 无 structured output 依赖
+  EC -> SCH: get_grammar_bitmask(scheduler_output)
+  SCH --> EC: grammar_output (maybe None)
+  EC -> EXE: sample_tokens(grammar_output,\n non_block=True or sync)
+  EXE -> GPU: sampling kernels
+  EXE --> EC: sample_future
+else 有 pending_structured_output_tokens
+  note over EC
+存在依赖：本轮要生成的 token/bitmask 需要上一轮输出\n
+（例如 grammar 状态推进、spec draft tokens 过滤/更新）
+因此采样必须“延后到上一轮输出处理完成之后”。
+end note
+  EC -> EC: deferred_scheduler_output = scheduler_output
+end
+
+== 依赖触发时的必要同步 ==
+EC -> EC: wait previous future.result()
+EC -> SCH: update_from_output(prev_scheduler_output, prev_model_output)
+
+alt spec decode + structured output
+  EC -> EXE: take_draft_token_ids()
+  EXE --> EC: draft_token_ids
+  EC -> SCH: update_draft_token_ids_in_output(\n draft_token_ids, deferred_scheduler_output)
+end
+
+EC -> SCH: get_grammar_bitmask(deferred_scheduler_output)
+SCH --> EC: grammar_output
+EC -> EXE: sample_tokens(grammar_output, non_block=True)
+EXE -> GPU: enqueue sampling kernels
+
+note right of EC
+这张图强调：vLLM 的 overlap 受“跨步控制依赖”约束。
+当依赖存在时，会形成显式同步点（必须先处理上一轮输出）。
+end note
+
+@enduml
+

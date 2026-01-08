@@ -1,0 +1,53 @@
+@startuml
+title MindIE-LLM：C++ Scheduler 的异步调度（placeholder token + predictedTokensBySeqId）
+
+participant "Engine / Exec handler" as ENG
+participant "Scheduler (C++)" as SCH
+collections "waiting_/running_" as Q
+database "predictedTokensBySeqId_\n(seqId -> [token...])" as MAP
+participant "Executor" as EXE
+
+== 关键配置 ==
+note over SCH
+activateAsyncInference=true 时：\n
+maxScheduledBatch_ 增大（允许 outstanding 多个 batch）。
+end note
+
+== 调度 tick N ==
+ENG -> SCH: Schedule(needSync?)
+SCH -> Q: dequeue candidates\n(policy apply/backfill)
+SCH --> ENG: SchedulerOutputs + MetaDatas
+
+== 为下一轮提前“推进状态”（异步调度的核心） ==
+ENG -> SCH: PrepareNextSchedule(scheduledSeqGroups)
+
+SCH -> SCH: AccumulateComputedTokens(...)\n(提前增加 numComputedTokens)
+SCH -> SCH: AddNextTokenPlaceHolder(...)\n(往 outputTokenIds 追加 PLACEHOLDER_TOKEN=-1)
+
+note right of SCH
+这样下一轮组 batch 时，\n
+已“被调度的 token”不会重复申请/重复计算 KV。\n
+占位符数量受 maxScheduledBatch_*(1+gamma)+... 限制。
+end note
+
+== 执行器产出 token（异步回填） ==
+EXE --> ENG: (seqId, token) stream/queue
+ENG -> SCH: FetchSeqGeneratedTokens(seqIdToOutputTokenQueue)
+SCH -> MAP: predictedTokensBySeqId_[seqId].push_back(token)
+
+== 在合适时机回填 placeholder ==
+ENG -> SCH: (next schedule / queue maintenance)
+SCH -> SCH: ReplacePlaceHolderWithToken(seqGroup)
+SCH -> MAP: lookup seqId tokens
+SCH -> SCH: 替换 outputTokenIds 尾部 placeholder\n为真实 token
+SCH -> MAP: erase(seqId)
+
+note over SCH
+这套机制与 SGLang FutureMap 的精神类似：\n
+允许“先推进调度”，\n
+再把真实 token 回填到占位符。\n
+但 MindIE 的占位符写在 outputTokenIds 容器中。
+end note
+
+@enduml
+

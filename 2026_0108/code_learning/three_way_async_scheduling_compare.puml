@@ -1,0 +1,80 @@
+@startuml
+title vLLM vs SGLang vs MindIE-LLM：异步调度“依赖表达 + 流水化边界”对比
+
+skinparam ParticipantPadding 18
+skinparam BoxPadding 10
+
+participant "Client" as C
+participant "GPU/NPU" as DEV
+
+box "vLLM（V1）" #EEF7FF
+  participant "EngineCore\n(batch_queue/Future)" as V_EC
+  participant "Scheduler\n(state placeholders)" as V_SCH
+end box
+
+box "SGLang（SRT）" #F4FFF1
+  participant "Scheduler\n(event_loop_overlap)" as S_LOOP
+  participant "FutureMap\n(负 token id)" as S_FM
+end box
+
+box "MindIE-LLM" #FFF4EA
+  participant "C++ Scheduler\n(PLACEHOLDER_TOKEN)" as M_SCH
+  participant "Py PluginManager\n(async_infer thread)" as M_PM
+end box
+
+== 共同问题 ==
+note over C,DEV
+“异步调度/overlap”都要解决同一个矛盾：\n
+下一步输入往往依赖上一步 token/grammar/spec，\n
+但为了吞吐又希望 CPU/GPU 不互相等待。
+end note
+
+== vLLM：Future + queue 推迟阻塞，依赖用状态表达 ==
+C -> V_EC: add_request
+V_EC -> V_SCH: schedule()
+V_EC -> DEV: execute_model(non_block=True)\n-> Future
+note right of V_SCH
+依赖表达：\n
+通过 request 的状态量（如 num_output_placeholders）\n
+描述“已调度但未最终落地”的 token。
+end note
+V_EC -> V_EC: (必要时) future.result() 同步点
+
+== SGLang：显式 overlap loop + FutureMap GPU resolve ==
+C -> S_LOOP: recv_requests
+S_LOOP -> DEV: forward on forward_stream
+S_LOOP -> S_FM: resolve_future(input_ids)\n(将负 token id 替换为真实 token)
+note right of S_FM
+依赖表达：\n
+负 token id 占位符写在 input_ids，\n
+依赖解析在 GPU 上完成。
+end note
+
+== MindIE：双层异步（C++ placeholder + Python pipeline） ==
+C -> M_PM: generate_token_async()
+M_PM -> DEV: (forward_thread) forward+sample
+M_PM -> M_PM: (main thread) postprocess(prev)\n+ submit(next)
+note right of M_PM
+Python 层：\n
+input_queue/output_queue + Event\n
+实现“prev 后处理”与“next forward”交错。
+end note
+
+M_SCH -> M_SCH: PrepareNextSchedule()\nAccumulateComputedTokens + AddNextTokenPlaceHolder(-1)
+M_SCH -> M_SCH: FetchSeqGeneratedTokens()\nseqId->tokens
+M_SCH -> M_SCH: ReplacePlaceHolderWithToken()
+note right of M_SCH
+C++ 层依赖表达：\n
+PLACEHOLDER_TOKEN 写入 outputTokenIds\n
+真实 token 回来后替换。
+end note
+
+== 总结 ==
+note over V_EC,S_LOOP,M_SCH
+vLLM：抽象更收敛，主要靠 Future/queue；依赖多用“状态”而非显式 token 占位。\n
+SGLang：系统化 overlap（stream/event + result_queue）；依赖用 FutureMap（负 token id）GPU resolve。\n
+MindIE：双层异步：Python 线程流水 + C++ placeholder token 回填；依赖显式写在 outputTokenIds。\n
+end note
+
+@enduml
+

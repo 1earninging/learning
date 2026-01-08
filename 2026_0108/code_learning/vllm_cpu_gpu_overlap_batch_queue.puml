@@ -1,0 +1,54 @@
+@startuml
+title vLLM：CPU/GPU overlap（EngineCore.step_with_batch_queue）
+
+participant "EngineCore (busy loop)" as EC
+participant "Scheduler" as SCH
+participant "ModelExecutor" as EXE
+collections "batch_queue\n(deque of futures)" as BQ
+participant "GPU\n(forward/sample)" as GPU
+
+== 主目标 ==
+note over EC
+尽量：CPU 侧持续 schedule+submit，
+GPU 侧持续 forward/sample，
+只在必要时刻阻塞等待结果。
+end note
+
+loop 每次 engine step
+  EC -> SCH: schedule()
+  SCH --> EC: scheduler_output
+
+  EC -> EXE: execute_model(scheduler_output,\nnon_block=True)
+  EXE --> EC: exec_future (Future)
+  EXE -> GPU: enqueue forward kernels
+
+  alt 本批无需采样 / 或直接复用 exec_future
+    EC -> BQ: appendleft((exec_future,\n scheduler_output, exec_future))
+  else 需要采样（可能也 non_block）
+    EC -> EXE: sample_tokens(grammar,\nnon_block=True)
+    EXE --> EC: sample_future (Future)
+    EXE -> GPU: enqueue sampling kernels
+    EC -> BQ: appendleft((sample_future,\n scheduler_output, exec_future))
+  end
+
+  alt 队列未满 && 最老 future 未完成
+    note over EC
+CPU 不阻塞：直接返回，继续下一轮 schedule。
+这会把 pipeline 填满（尤其 PP>1）。
+end note
+  else 队列满或需要产出结果
+    EC -> BQ: pop() 取最早提交的 future
+    BQ --> EC: (future, scheduler_output, exec_model_fut)
+    EC -> EC: future.result()  (阻塞等待)
+    EC -> SCH: update_from_output(scheduler_output, model_output)
+    SCH --> EC: EngineCoreOutputs
+  end
+end
+
+note right of EC
+关键：batch_queue 让 “schedule/submit” 与 “等待结果/后处理” 解耦，
+把阻塞点后移，并允许 CPU 提前填充后续 batch。
+end note
+
+@enduml
+
