@@ -1,0 +1,88 @@
+@startuml
+title vLLM v1 - KVCache 数据结构（简化类图）
+
+skinparam classAttributeIconSize 0
+hide methods
+
+class Request {
+  +request_id: str
+  +all_token_ids: int[]
+  +block_hashes: BlockHash[]
+  +num_tokens: int
+  +num_computed_tokens: int
+  +kv_transfer_params: dict?
+}
+
+class KVCacheManager {
+  +allocate_slots(...)
+  +get_computed_blocks(...)
+}
+
+class KVCacheCoordinator {
+  +find_longest_cache_hit(...)
+  +allocate_new_blocks(...)
+  +cache_blocks(...)
+}
+
+class BlockPool {
+  +blocks: KVCacheBlock[]
+  +free_block_queue: FreeKVCacheBlockQueue
+  +cached_block_hash_to_block: BlockHashToBlockMap
+}
+
+class KVCacheBlock {
+  +block_id: int
+  +ref_cnt: int
+  +block_hash: BlockHashWithGroupId?
+  +is_null: bool
+}
+
+class BlockHashToBlockMap {
+  +cache: map[BlockHashWithGroupId, KVCacheBlock|map]
+}
+
+class BlockTable {
+  +block_table[req, block_idx] = block_id
+  +slot_mapping[token] = block_id*block_size + offset
+  +commit_block_table()
+  +commit_slot_mapping()
+}
+
+class KVCacheSpec {
+  +block_size: int
+  +page_size_bytes: int
+}
+
+class KVCacheConfig {
+  +num_blocks: int
+  +kv_cache_groups: KVCacheGroupSpec[]
+}
+
+class KVCacheGroupSpec {
+  +layer_names: str[]
+  +kv_cache_spec: KVCacheSpec
+}
+
+Request --> KVCacheManager
+KVCacheManager --> KVCacheCoordinator
+KVCacheCoordinator --> BlockPool
+BlockPool --> KVCacheBlock
+BlockPool --> BlockHashToBlockMap
+KVCacheManager --> BlockTable
+KVCacheConfig --> KVCacheGroupSpec
+KVCacheGroupSpec --> KVCacheSpec
+
+note right of BlockHashToBlockMap
+  prefix cache 索引：
+  key = BlockHash + group_id
+  value = 物理 block（可重复，不做去重）
+end note
+
+note bottom of BlockTable
+  BlockTable/slot_mapping 用于把“token position”
+  映射到“KV 缓冲区物理位置”供 attention kernel 读取。
+end note
+
+@enduml
+
+

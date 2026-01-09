@@ -1,0 +1,63 @@
+@startuml
+title vLLM v1 - KVCache 管理（组件视图）
+
+skinparam componentStyle rectangle
+skinparam wrapWidth 240
+skinparam maxMessageSize 120
+
+package "vLLM v1 Engine" {
+  [Scheduler] as sched
+  [KVCacheManager] as kvm
+  [KVCacheCoordinator] as kvc
+  [BlockPool] as pool
+  [BlockTable] as btab
+  [ModelRunner/Worker] as worker
+
+  [Request] as req
+  [BlockHash计算\n(request.block_hashes)] as bh
+}
+
+package "Attention Backend" {
+  [PagedAttention/AttnKernel] as attn
+}
+
+package "Distributed (可选)" {
+  [KVConnector (v1)] as kvcx
+  [KV Pipe/Lookup Buffer] as kvpipe
+  [Transfer Backend\n(Mooncake/NIXL/...)] as backend
+}
+
+req --> bh : 追加 token 时\n生成 full-block hashes
+bh --> kvm : prefix cache 查询 key\n(block_hashes)
+
+sched --> kvm : allocate_slots()\n(含 ext_comp / lookahead)
+kvm --> kvc : find_longest_cache_hit()\nallocate_new_blocks()
+kvc --> pool : get_new_blocks()\ntouch()/free_blocks()
+kvm --> btab : block_ids -> block_table\nslot_mapping
+
+worker --> btab : commit_block_table()\ncommit_slot_mapping()
+worker --> attn : 运行 attention\n通过 slot_mapping 访问 KV
+
+note right of pool
+  BlockPool 维护：
+  - KVCacheBlock(block_id, ref_cnt, block_hash)
+  - free_block_queue (LRU/evict order)
+  - cached_block_hash_to_block (prefix cache)
+end note
+
+note bottom of kvm
+  关键点：
+  - prefix cache 以“完整 block”为粒度
+  - block table append-only（不去重）
+  - ext_comp：允许外部/connector 提供已计算 tokens 的 KV
+end note
+
+' KV transfer (disagg)
+sched ..> kvcx : build_connector_meta()\n(state + ids)
+kvcx ..> kvpipe
+kvpipe ..> backend
+kvcx ..> worker : bind_metadata()\nstart_load_kv()
+
+@enduml
+
+

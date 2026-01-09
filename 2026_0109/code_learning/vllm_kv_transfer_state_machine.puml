@@ -1,0 +1,58 @@
+@startuml
+title vLLM v1 - Request 级 KV 传输状态机（kv_connector 视角）
+
+skinparam state {
+  BackgroundColor #F8F8F8
+  BorderColor #333333
+}
+
+[*] --> NewReq
+
+state NewReq {
+  [*] --> AwaitMatchQuery
+  AwaitMatchQuery : scheduler-side\nget_num_new_matched_tokens()
+}
+
+AwaitMatchQuery --> Allocated : allocate_slots(num_external_tokens)\nupdate_state_after_alloc()
+
+Allocated --> RecvScheduled : build_connector_meta()\nbind metadata to worker
+RecvScheduled --> RecvInProgress : worker start_load_kv()\n(async recv)
+RecvInProgress --> RecvDone : get_finished() reports recving done
+RecvInProgress --> RecvFailed : handshake/transfer failed\ninvalid blocks recorded
+RecvInProgress --> RecvTimeout : timeout (backend/side-channel)\nrelease/mark failed
+
+RecvDone --> Running : model forward uses KV\n(block_table/slot_mapping)
+RecvFailed --> Running : fallback: compute missing tokens locally
+RecvTimeout --> Running : fallback: compute missing tokens locally
+
+Running --> Finished : request finished in engine
+
+state Finished {
+  [*] --> DecideSend
+  DecideSend : request_finished(block_ids)\nmay return delay_free_blocks
+  DecideSend --> SendScheduled : do_remote_decode\n(or producer role)
+  DecideSend --> FreeNow : no async send needed
+}
+
+SendScheduled --> SendInProgress : worker starts async send\n(save_kv_to_host optional)
+SendInProgress --> SendDone : get_finished() reports sending done
+SendInProgress --> SendTimeout : abort timeout\nfree blocks to avoid leak
+SendInProgress --> SendFailed : transfer error\nfree blocks / report
+
+SendDone --> FreeNow
+SendTimeout --> FreeNow
+SendFailed --> FreeNow
+
+FreeNow --> [*]
+
+note right of RecvFailed
+  NIXL: handshake 失败会把\nlocal_block_ids 标记为 invalid\n并将 req_id 放入 failed_recv 集合
+end note
+
+note right of DecideSend
+  delay_free_blocks=True 时\nconnector 接管“延迟释放”，\n直到发送完成或超时
+end note
+
+@enduml
+
+

@@ -2,3 +2,5 @@
 vllm-main/
 sglang-main/
 MindIE-LLM/
+sglang/
+vllm/

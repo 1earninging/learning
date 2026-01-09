@@ -1,0 +1,80 @@
+@startuml
+title SGLang - KVCache 数据结构（简化类图）
+
+skinparam classAttributeIconSize 0
+hide methods
+
+class Req {
+  +rid: str
+  +req_pool_idx: int
+  +origin_input_ids: int[]
+  +output_ids: int[]
+  +fill_ids: int[]
+  +kv_committed_len: int
+}
+
+class ReqToTokenPool {
+  +req_to_token: int32[req_slots, max_ctx]
+  +alloc(req_slots)
+  +free(req_slot)
+}
+
+class BaseTokenToKVPoolAllocator {
+  +page_size: int
+  +alloc(n_tokens) -> loc[]
+  +free(locs)
+}
+
+class PagedTokenToKVPoolAllocator {
+  +alloc_extend(prefix_lens, seq_lens, last_loc, ...)
+  +alloc_decode(seq_lens, last_loc)
+}
+
+class KVCache {
+  +page_size: int
+  +get_contiguous_buf_infos()
+  +set_kv_buffer(layer, loc, k, v)
+}
+
+class RadixCache {
+  +match_prefix(key) -> device_indices
+  +insert(key, values)
+  +evict(policy)
+}
+
+class HiCacheController {
+  +local_match(L1/L2)
+  +prefetch(L3->L2)
+  +write_back(L1/L2->L3)
+}
+
+class HiCacheStorage(ABC) {
+  +batch_get(keys, target)
+  +batch_set(keys, source)
+  +exists(key)
+}
+
+Req --> ReqToTokenPool : req_pool_idx
+ReqToTokenPool --> BaseTokenToKVPoolAllocator : (write locs)
+BaseTokenToKVPoolAllocator --> KVCache : loc->物理 KV
+PagedTokenToKVPoolAllocator -|> BaseTokenToKVPoolAllocator
+
+RadixCache --> ReqToTokenPool : values = kv_indices
+RadixCache --> BaseTokenToKVPoolAllocator : free duplicates / alloc miss
+
+HiCacheController --> RadixCache
+HiCacheController --> HiCacheStorage
+
+note right of ReqToTokenPool
+  req_to_token[req_pool_idx, token_pos] = kv_loc
+  kv_loc 可按 page_size 对齐
+end note
+
+note right of HiCacheStorage
+  L3 后端：Mooncake/NIXL/3FS/AIBrix/...
+  支持 zero-copy（传 addr/len）
+end note
+
+@enduml
+
+

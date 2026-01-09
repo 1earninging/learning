@@ -1,0 +1,57 @@
+@startuml
+title SGLang vs vLLM - KV 传输“边界条件/工程细节”对比视图
+
+left to right direction
+skinparam componentStyle rectangle
+skinparam wrapWidth 280
+
+package "维度 1：索引单位" {
+  [vLLM: block_id\n(block table / slot_mapping)] as A1
+  [SGLang: page_indices/loc\n(req_to_token)] as A2
+}
+
+package "维度 2：内存注册 & fallback" {
+  [vLLM: register KV tensors\n(Mooncake/NIXL)] as B1
+  [vLLM NIXL: host_xfer_buffers\n+ copy_blocks(d2h/h2d)] as B2
+  [SGLang: get_contiguous_buf_infos()\nbackend holds ptr/len/item_len] as B3
+  [SGLang HiCache L3: zero-copy\n(addr/len, page_first)] as B4
+}
+
+package "维度 3：异构 TP / layout" {
+  [vLLM NIXL: handshake\n(tp_ratio, block_len,\nkv_cache_layout)] as C1
+  [vLLM NIXL: permute_device_kv\n(HND<->NHD)] as C2
+  [SGLang: page_size 对齐\nchunk 尾部 partial page 延迟] as C3
+  [SGLang: hybrid state_indices\n(SWA/Mamba/NSA)] as C4
+}
+
+package "维度 4：生命周期与回收" {
+  [vLLM: request_finished()\nmay delay_free_blocks\nget_finished() 完成后释放] as D1
+  [vLLM: timeout/invalid blocks\n避免 block 泄漏] as D2
+  [SGLang: prefill inflight poll\nSuccess->release_kv_cache\nFailed->abort] as D3
+  [SGLang: decode transfer poll\nFailed->release_kv_cache(is_insert=False)] as D4
+}
+
+A1 -[hidden]-> A2
+B1 -[hidden]-> B3
+C1 -[hidden]-> C3
+D1 -[hidden]-> D3
+
+B1 --> B2 : 当 device 内存\n无法注册或配置为 cpu buffer
+B3 --> B4 : HiCache 将 KV 下沉到 L2/L3\n并支持预取/回写
+
+C1 --> C2 : layout mismatch\n时的补救路径
+C3 --> C4 : hybrid 模型\n携带额外 state
+
+D1 --> D2 : 超时/失败\n也要触发释放逻辑
+D3 --> D4 : decode 侧失败\n不应插入前缀缓存
+
+note bottom
+  读源码建议：
+  - vLLM: `vllm/distributed/kv_transfer/kv_connector/v1/{mooncake,nixl}_connector.py`
+  - SGLang: `sglang/srt/disaggregation/{prefill,decode}.py`
+           + HiCache: `sglang/docs/advanced_features/hicache_design.md`
+end note
+
+@enduml
+
+

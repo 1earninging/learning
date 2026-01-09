@@ -1,0 +1,68 @@
+@startuml
+title SGLang - PD Disaggregation KV 传输数据流细化（page_indices/chunk/state）
+
+left to right direction
+skinparam componentStyle rectangle
+skinparam wrapWidth 260
+skinparam maxMessageSize 120
+
+package "Prefill Instance" {
+  [Scheduler] as P
+  [ReqToTokenPool] as P_R2T
+  [Paged Allocator] as P_ALLOC
+  [KVCache Tensors\n(device)] as P_KV
+  [KV Sender\n(disagg_kv_sender)] as S
+  [MetadataBuffers] as P_MB
+}
+
+package "Transfer Backend" {
+  [KV Manager\n(BaseKVManager)] as MGR
+  [Transport\n(Mooncake/NIXL/IB/..)] as T
+}
+
+package "Decode Instance" {
+  [Decode PreallocQueue] as D_PQ
+  [ReqToTokenPool] as D_R2T
+  [Paged Allocator] as D_ALLOC
+  [KVCache Tensors\n(device)] as D_KV
+  [KV Receiver\n(kv_receiver)] as R
+  [Decode TransferQueue\n(poll)] as D_TQ
+  [PrebuiltExtendBatch] as PB
+}
+
+' 初始化：双方把“连续 KV buffer 地址信息”交给 backend
+P_KV --> MGR : get_contiguous_buf_infos()\n(kv_data_ptrs/lens/item_lens)
+D_KV --> MGR : get_contiguous_buf_infos()
+
+' Prefill：写 KV + 分块发送
+P --> P_ALLOC : alloc_extend()\npage_size 对齐
+P_ALLOC --> P_R2T : write(req_to_token[req_slot,t]=loc)
+P_R2T --> P_KV : loc 对应物理位置\n写入 K/V
+
+P --> P_MB : last_chunk 时\n写 metadata（logprob/hidden states）
+P --> S : kv_indices = req_to_token[start:end]\npage_indices = kv_to_page_indices()
+S --> MGR : send(page_indices,\nstate_indices if hybrid,\nmetadata_idx if last_chunk)
+MGR --> T : transfer pages/state
+
+note right of S
+  chunk 发送要点：
+  - 非 last_chunk：尾部 partial page 会延迟
+  - last_chunk：附带 metadata/state
+  - hybrid：SWA/Mamba/NSA 需要 state_indices
+end note
+
+' Decode：预分配 + 接收写入
+D_PQ --> D_ALLOC : pre_alloc -> alloc_extend()
+D_ALLOC --> D_R2T : write(req_to_token)
+D_R2T --> D_KV : 预分配 loc/pages 对应的 KV 位置
+
+R --> MGR : init(page_indices,\nmetadata_idx,\nstate_indices)
+MGR --> T : recv -> 写入 D_KV 对应 pages
+
+D_TQ --> R : poll()
+R --> D_TQ : Success/Failed
+D_TQ --> PB : commit metadata\n构造 prebuilt batch
+
+@enduml
+
+

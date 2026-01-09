@@ -1,0 +1,60 @@
+@startuml
+title SGLang - Request 级状态机（PD Disaggregation：prefill 与 decode 两端）
+
+skinparam state {
+  BackgroundColor #F8F8F8
+  BorderColor #333333
+}
+
+state "Prefill Side" as PREFILL {
+  [*] --> Bootstrapping
+  Bootstrapping : PrefillBootstrapQueue\nhandshake + prealloc metadata_idx
+
+  Bootstrapping --> Waiting : bootstrap done\n(move to waiting_queue)
+  Bootstrapping --> Aborted : bootstrap failed\nprepare_abort + stream_output
+
+  Waiting --> PrefillForward : run_batch(prefill)
+  PrefillForward --> InflightTransfer : send_kv_chunk(last_chunk?)\n进入 inflight_queue
+  InflightTransfer --> TransferDone : poll sender == Success\nrelease_kv_cache(unlock)
+  InflightTransfer --> TransferFailed : poll sender == Failed\nabort + release_kv_cache
+
+  TransferDone --> [*]
+  TransferFailed --> [*]
+  Aborted --> [*]
+}
+
+state "Decode Side" as DECODE {
+  [*] --> Handshaking
+  Handshaking : DecodePreallocQueue\nkv_receiver bootstrap
+
+  Handshaking --> WaitingForInput : poll == WaitingForInput
+  Handshaking --> Aborted : poll == Failed\nprepare_abort
+
+  WaitingForInput --> Preallocated : pre_alloc(req)\nalloc_extend + write req_to_token\nalloc metadata_idx
+  Preallocated --> Transferring : kv_receiver.init(page_indices,\nmetadata_idx,state)
+  Transferring --> Transferred : poll == Success\ncommit metadata\nclear receiver
+  Transferring --> TransferFailed : poll == Failed\nabort + release_kv_cache(is_insert=False)
+
+  Transferred --> PrebuiltBatch : ScheduleBatch.prepare_for_prebuilt()\nskip prefill compute
+  PrebuiltBatch --> RunningDecode : merge into running_batch
+  RunningDecode --> [*]
+
+  TransferFailed --> [*]
+  Aborted --> [*]
+}
+
+note bottom of PREFILL
+  关键队列：
+  - bootstrap_queue -> waiting_queue -> inflight_queue
+  - inflight_queue poll 成功后才回包/释放锁
+end note
+
+note bottom of DECODE
+  关键队列：
+  - prealloc_queue(含 handshake waiter) -> transfer_queue(poll) -> waiting_queue
+  - transferred 后生成 prebuilt batch，再与 running batch 合并进入 decode
+end note
+
+@enduml
+
+

@@ -1,0 +1,67 @@
+@startuml
+title vLLM v1 - KV Transfer 数据流细化（Mooncake vs NIXL）
+
+left to right direction
+skinparam componentStyle rectangle
+skinparam wrapWidth 260
+skinparam maxMessageSize 120
+
+package "vLLM Decode Instance (D)" {
+  [Scheduler\n(KVCacheManager)] as DS
+  [KVConnector Scheduler] as DCS
+  [KVConnector Worker] as DCW
+  [KV Cache Tensors\n(device)] as D_KV
+  [BlockTable/slot_mapping] as D_BT
+}
+
+package "vLLM Prefill Instance (P)" {
+  [KVConnector Worker] as PCW
+  [KV Cache Tensors\n(device)] as P_KV
+}
+
+package "Backends" {
+  [Mooncake TransferEngine] as MC
+  [NIXL Agent/Wrapper] as NX
+}
+
+package "NIXL Optional Host Buffer" {
+  [host_xfer_buffers\n(cpu)] as HB
+  [copy_blocks(d2h/h2d)] as CPY
+}
+
+DS --> DCS : get_num_new_matched_tokens()\nupdate_state_after_alloc()
+DCS --> DCW : bind metadata\n(recv/send reqs, local_block_ids,...)
+
+DCW --> D_KV : register_kv_caches()\n(base_addr, tensor_size, num_blocks)
+PCW --> P_KV : register_kv_caches()
+
+note right of DCW
+  connector 关键元信息（示意）：
+  - remote_host/port 或 remote_engine_id
+  - request_ids -> block_ids
+  - kv_caches_base_addr（每层 base_ptr）
+  - block_len / block_size / kv_cache_layout
+end note
+
+DCW --> MC : [Mooncake] batch_register_memory(kv_ptrs, kv_lens)
+PCW --> MC : [Mooncake] batch_register_memory(kv_ptrs, kv_lens)
+DCW --> MC : [Mooncake] receive_kv(meta)\n(REQ/ROUTER side-channel)
+MC ..> P_KV : [Mooncake] RDMA write/read\n按 block_id*block_len
+
+DCW --> NX : [NIXL] register_memory(descs)\nprep_xfer_dlist(src/dst)
+DCW --> NX : [NIXL] handshake(exchange agent metadata)\n(kv_cache_layout/block_size/tp_size)
+NX ..> P_KV : [NIXL] remote descs\n(按 tp_ratio/head-split)
+
+DCW --> HB : [可选] initialize_host_xfer_buffer()\n(当 kv_buffer_device=cpu 或 device 内存不可注册)
+DCW --> CPY : [可选] set_host_xfer_buffer_ops(copy_blocks)
+CPY ..> D_KV : [可选] d2h/h2d copy by block ids
+HB ..> NX : [可选] xfer 使用 DRAM host buffer\n替代 VRAM
+
+DCW --> D_KV : [可选] layout mismatch 时\npermute_device_kv(block_ids)
+DCW --> D_KV : [可选] logical block_size != kernel block_size\nlogical->physical block id mapping
+
+D_BT --> D_KV : attention 通过 slot_mapping 访问 KV
+
+@enduml
+
+
