@@ -1,0 +1,121 @@
+@startuml
+title vLLM V1 - GPUModelRunner 关键类关系（主链路视角）
+
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+
+package "vllm.v1.engine" as engine {
+  class EngineCore {
+    +add_request(request)
+    +step(): (EngineCoreOutputsByClient, model_executed?)
+  }
+
+  abstract class EngineCoreClient {
+    +add_request(EngineCoreRequest)
+    +get_output(): EngineCoreOutputs
+  }
+
+  class EngineCoreRequest
+  class EngineCoreOutputs
+  class EngineCoreOutput
+}
+
+package "vllm.v1.core.sched" as sched {
+  class Scheduler {
+    +add_request(Request)
+    +schedule(): SchedulerOutput
+    +get_grammar_bitmask(SchedulerOutput): GrammarOutput?
+    +update_from_output(SchedulerOutput, ModelRunnerOutput): EngineCoreOutputsByClient
+  }
+
+  class Request
+  class SchedulerOutput
+  class GrammarOutput
+}
+
+package "vllm.v1.executor" as exec {
+  abstract class Executor {
+    +execute_model(SchedulerOutput): ModelRunnerOutput?  ' 可能返回 None，需紧接 sample_tokens
+    +sample_tokens(GrammarOutput?): ModelRunnerOutput
+  }
+
+  class UniProcExecutor
+  class MultiprocExecutor
+  class RayDistributedExecutor
+}
+
+package "vllm.v1.worker" as worker {
+  class WorkerBase {
+    +execute_model(SchedulerOutput): ModelRunnerOutput|AsyncModelRunnerOutput|None
+    +sample_tokens(GrammarOutput?): ModelRunnerOutput|AsyncModelRunnerOutput
+  }
+  class "gpu_worker.Worker" as GPUWorker
+}
+
+package "vllm.v1.worker.model_runner" as runner {
+  class GPUModelRunnerV1 <<ModelRunner>> {
+    +execute_model(SchedulerOutput, intermediate_tensors=None): ModelRunnerOutput|None
+    +sample_tokens(GrammarOutput?): AsyncModelRunnerOutput|ModelRunnerOutput
+    --
+    -req_states: RequestState
+    -input_buffers: InputBuffers
+    -block_tables: BlockTables
+    -cudagraph_manager: CudaGraphManager
+    -sampler: Sampler
+    -speculator: Speculator?
+  }
+
+  class GPUModelRunnerV2 <<ModelRunner>> {
+    +execute_model(SchedulerOutput, intermediate_tensors=None): ModelRunnerOutput|None
+    +sample_tokens(GrammarOutput?): AsyncModelRunnerOutput|ModelRunnerOutput
+    --
+    -input_batch: InputBatch  ' persistent batch 优化
+    -requests: CachedRequestState[*]
+  }
+
+  class "AsyncModelRunnerOutput\n(接口)" as AsyncModelRunnerOutput <<interface>>
+  class ModelRunnerOutput
+  class SchedulerOutput
+  class GrammarOutput
+}
+
+' ===== 关系：请求主链路 =====
+EngineCore --> Executor : model_executor\n(构造于 EngineCore.__init__)
+EngineCore --> Scheduler : scheduler\n(构造于 EngineCore.__init__)
+
+EngineCoreClient --> EngineCore : add_request()/get_output()
+EngineCore ..> EngineCoreRequest
+Scheduler ..> Request
+
+Scheduler --> SchedulerOutput : schedule()
+Scheduler --> GrammarOutput : get_grammar_bitmask()
+Scheduler --> ModelRunnerOutput : update_from_output()
+
+Executor ..> WorkerBase : collective_rpc("execute_model"/"sample_tokens")
+GPUWorker -up-|> WorkerBase
+GPUWorker *-- GPUModelRunnerV1 : model_runner (默认 V1)
+GPUWorker *-- GPUModelRunnerV2 : model_runner (envs.VLLM_USE_V2_MODEL_RUNNER=1)
+
+GPUModelRunnerV1 ..> SchedulerOutput
+GPUModelRunnerV1 ..> GrammarOutput
+GPUModelRunnerV1 ..> ModelRunnerOutput
+GPUModelRunnerV1 ..> AsyncModelRunnerOutput
+
+GPUModelRunnerV2 ..> SchedulerOutput
+GPUModelRunnerV2 ..> GrammarOutput
+GPUModelRunnerV2 ..> ModelRunnerOutput
+GPUModelRunnerV2 ..> AsyncModelRunnerOutput
+
+UniProcExecutor -up-|> Executor
+MultiprocExecutor -up-|> Executor
+RayDistributedExecutor -up-|> Executor
+
+note right of UniProcExecutor
+非阻塞路径会把 AsyncModelRunnerOutput.get_output()\n放到后台线程/Future 里执行，最终回到 ModelRunnerOutput
+end note
+
+note right of MultiprocExecutor
+跨进程/跨节点时，Executor 也会在返回前\n把 AsyncModelRunnerOutput 解包成 ModelRunnerOutput
+end note
+
+@enduml

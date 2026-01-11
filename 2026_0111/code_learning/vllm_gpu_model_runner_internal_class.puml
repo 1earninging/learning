@@ -1,0 +1,160 @@
+@startuml
+title vLLM V1 - GPUModelRunner 内部类图（关键对象与关系）
+
+left to right direction
+skinparam dpi 80
+scale 0.85
+hide empty members
+
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam shadowing false
+
+package "vllm.v1.worker.gpu.model_runner" as mr_pkg {
+  class GPUModelRunner {
+    +load_model()
+    +initialize_kv_cache(kv_cache_config)
+    +update_states(scheduler_output)
+    +prepare_inputs(scheduler_output, num_tokens_after_padding): InputBatch
+    +execute_model(scheduler_output, intermediate_tensors=None): ModelRunnerOutput|None
+    +sample_tokens(grammar_output): AsyncOutput|ModelRunnerOutput
+    .. fields (abridged) ..
+    -model: nn.Module
+    -req_states: RequestState
+    -input_buffers: InputBuffers
+    -block_tables: BlockTables
+    -cudagraph_manager: CudaGraphManager
+    -sampler: Sampler
+    -speculator: Speculator?
+  }
+}
+
+package "Mixins" as mixins {
+  class LoRAModelRunnerMixin
+  class KVConnectorModelRunnerMixin
+}
+
+package "vllm.v1.worker.gpu.states" as states {
+  class RequestState {
+    +add_request(req_id, prompt_len, prefill_token_ids, num_computed_tokens, sampling_params, lora_request)
+    +remove_request(req_id)
+    +make_sampling_metadata(idx_mapping, idx_mapping_np, pos): SamplingMetadata
+    .. key fields ..
+    +req_id_to_index
+    +prefill_token_ids / prefill_len
+    +num_computed_tokens / last_sampled_tokens / draft_tokens
+  }
+  class ExtraData
+}
+
+package "vllm.v1.worker.gpu.input_batch" as inbuf {
+  class InputBuffers {
+    +idx_mapping
+    +input_ids / positions
+    +query_start_loc / seq_lens
+    +cu_num_logits
+  }
+  class InputBatch {
+    +req_ids
+    +idx_mapping / idx_mapping_np
+    +num_scheduled_tokens
+    +attn_metadata
+    +logits_indices / cu_num_logits
+  }
+}
+
+package "vllm.v1.worker.gpu.block_table" as bt {
+  class BlockTables {
+    +append_block_ids(req_indices, cu_num_new_blocks, new_block_ids, overwrite)
+    +gather_block_tables(idx_mapping): tuple[torch.Tensor,...]
+    +compute_slot_mappings(query_start_loc, positions): torch.Tensor
+  }
+}
+
+package "vllm.v1.worker.gpu.cudagraph_utils" as cg {
+  class CudaGraphManager {
+    +capture(model, input_buffers, block_tables, attn_metadata_builders, kv_cache_config)
+    +get_cudagraph_size(scheduler_output, num_tokens_after_padding): int?
+    +run(num_tokens): torch.Tensor
+    .. internal: graphs ..
+  }
+}
+
+package "vllm.v1.worker.gpu.sample" as samp {
+  class Sampler {
+    +__call__(logits, sampling_metadata): SamplerOutput
+  }
+  class SamplingMetadata
+  class SamplerOutput
+}
+
+package "vllm.v1.worker.gpu.async_utils" as async_pkg {
+  interface AsyncModelRunnerOutput {
+    +get_output(): ModelRunnerOutput
+  }
+  class AsyncOutput
+}
+
+package "vllm.v1.core.sched" as sched {
+  class SchedulerOutput
+  class GrammarOutput
+}
+
+package "vllm.v1.outputs" as outs {
+  class ModelRunnerOutput
+  class LogprobsTensors
+  class LogprobsLists
+}
+
+package "vllm.v1.worker.gpu.spec_decode" as spec {
+  abstract class Speculator {
+    +load_model(model)
+    +capture_model()
+    +propose(...)
+  }
+}
+
+package "PyTorch" as torchpkg {
+  class "nn.Module" as nn_Module
+  class "torch.Tensor" as torch_Tensor
+}
+
+' ===== 继承/实现 =====
+GPUModelRunner -up-|> LoRAModelRunnerMixin
+GPUModelRunner -up-|> KVConnectorModelRunnerMixin
+AsyncOutput -up-|> AsyncModelRunnerOutput
+
+' ===== 组合/依赖 =====
+GPUModelRunner *-- RequestState
+RequestState *-- ExtraData
+GPUModelRunner *-- InputBuffers
+GPUModelRunner *-- BlockTables
+GPUModelRunner *-- CudaGraphManager
+GPUModelRunner *-- Sampler
+GPUModelRunner o-- Speculator
+GPUModelRunner o-- nn_Module : model
+GPUModelRunner o-- torch_Tensor : kv_caches[*]
+
+GPUModelRunner ..> SchedulerOutput
+GPUModelRunner ..> GrammarOutput
+GPUModelRunner ..> InputBatch
+GPUModelRunner ..> SamplingMetadata
+GPUModelRunner ..> ModelRunnerOutput
+
+Sampler ..> SamplingMetadata
+Sampler ..> SamplerOutput
+AsyncOutput ..> ModelRunnerOutput
+ModelRunnerOutput ..> LogprobsLists
+LogprobsTensors ..> LogprobsLists : tolists()
+
+CudaGraphManager ..> SchedulerOutput
+CudaGraphManager ..> InputBuffers
+CudaGraphManager ..> BlockTables
+CudaGraphManager ..> nn_Module
+
+InputBatch ..> torch_Tensor
+InputBuffers ..> torch_Tensor
+BlockTables ..> torch_Tensor
+
+@enduml
+

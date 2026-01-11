@@ -1,0 +1,76 @@
+@startuml
+title vLLM V1 - Request flow into GPUModelRunner (sequence)
+
+skinparam responseMessageBelowArrow true
+skinparam sequenceMessageAlign center
+skinparam ParticipantPadding 5
+skinparam BoxPadding 10
+skinparam Padding 2
+skinparam maxMessageSize 60
+
+actor "FE" as FE
+participant "ECC" as ECC
+participant "EC" as EC
+participant "SCH" as SCH
+participant "EXE" as EXE
+participant "MR" as MR
+
+legend left
+FE  = Frontend (API / LLMEngine)
+ECC = EngineCoreClient (Inproc / MP / AsyncMP)
+EC  = EngineCore
+SCH = Scheduler
+EXE = Executor (UniProc / Multiproc / Ray)
+MR  = GPUModelRunner
+endlegend
+
+== Request ingress ==
+FE -> ECC: add_request(EngineCoreRequest)
+ECC -> EC: add_request(EngineCoreRequest)
+EC -> SCH: add_request(Request)
+
+== step(): schedule + execute + aggregate outputs ==
+FE -> ECC: get_output() / tick
+ECC -> EC: step()
+
+EC -> SCH: schedule()
+SCH --> EC: SchedulerOutput
+
+EC -> EXE: execute_model(SchedulerOutput)\n(non_block=True)
+EXE -> MR: execute_model(SchedulerOutput)\n(via worker RPC)
+
+alt SchedulerOutput.total_num_scheduled_tokens == 0
+  MR --> EXE: EMPTY_MODEL_RUNNER_OUTPUT
+  EXE --> EC: ModelRunnerOutput
+else tokens scheduled (common)
+  MR -> MR: update_states()\n(add/remove request state, block table)
+  MR -> MR: prepare_inputs() -> InputBatch\n+ SamplingMetadata
+  MR -> MR: run model\n(CUDA Graph or eager forward)
+  note right of MR
+  - FULL CUDA Graph: CudaGraphManager.run()\n  - Eager: model.forward() with set_forward_context()
+  end note
+  MR --> EXE: None\n(cache execute_model_state only)
+  EXE --> EC: None
+
+  EC -> SCH: get_grammar_bitmask(SchedulerOutput)
+  SCH --> EC: GrammarOutput?
+
+  EC -> EXE: sample_tokens(GrammarOutput?)
+  EXE -> MR: sample_tokens(GrammarOutput?)\n(via worker RPC)
+  MR -> MR: compute_logits + sample()\n(+ grammar bitmask optional)
+  MR -> MR: postprocess()\n(update num_computed_tokens/last_sampled_tokens)
+  MR --> EXE: AsyncModelRunnerOutput or ModelRunnerOutput
+
+  note over EXE
+  If MR returns AsyncModelRunnerOutput (e.g. UniProc + async_scheduling),\nExecutor calls get_output() to unwrap into ModelRunnerOutput
+  end note
+
+  EXE --> EC: ModelRunnerOutput
+end
+
+EC -> SCH: update_from_output(SchedulerOutput, ModelRunnerOutput)
+SCH --> EC: EngineCoreOutputs (grouped by client_index)
+EC --> ECC: EngineCoreOutputs
+ECC --> FE: EngineCoreOutputs\n(new_token_ids / finish_reason / ...)
+
+@enduml

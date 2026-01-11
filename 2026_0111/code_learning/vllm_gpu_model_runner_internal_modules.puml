@@ -1,0 +1,107 @@
+@startuml
+title vLLM V1 - GPUModelRunner 内部子模块（展开）
+
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam shadowing false
+
+package "GPUModelRunner (vllm.v1.worker.gpu.model_runner)" as MR {
+  [GPUModelRunner] as GPUModelRunner
+
+  package "State & Params" as state {
+    [RequestState\n(states.py)] as RequestState
+    [ExtraData\n(states.py)] as ExtraData
+    [SamplingMetadata\n(sample/metadata.py)] as SamplingMetadata
+  }
+
+  package "Batch Inputs" as batch {
+    [InputBuffers\n(input_batch.py)] as InputBuffers
+    [InputBatch\n(input_batch.py)] as InputBatch
+  }
+
+  package "KV mapping" as kvmap {
+    [BlockTables\n(block_table.py)] as BlockTables
+  }
+
+  package "Attention & KV cache" as attnkv {
+    [AttentionBackend(s)\n(attn_utils.py)] as AttnBackend
+    [AttentionMetadataBuilder(s)\n(attn_utils.py)] as AttnBuilder
+    [build_attn_metadata()\n(attn_utils.py)] as BuildAttnMeta
+    [KV caches (torch.Tensor)\n(attn_utils.init_kv_cache)] as KVCaches
+  }
+
+  package "Execution accel" as execacc {
+    [CudaGraphManager\n(cudagraph_utils.py)] as CudaGraphManager
+    [DP utils\n(dp_utils.py)] as DPUtils
+    [Async barrier/event\n(async_utils.py)] as AsyncBarrier
+  }
+
+  package "Sampling & Postprocess" as samp {
+    [Sampler\n(sample/sampler.py)] as Sampler
+    [Logprobs\n(sample/logprob.py)] as Logprobs
+    [post_update()\n(input_batch.post_update)] as PostUpdate
+  }
+
+  package "Optional features" as opt {
+    [Structured outputs\n(structured_outputs.py)] as StructuredOutputs
+    [Speculator (EAGLE)\n(spec_decode/*)] as Speculator
+    [LoRAModelRunnerMixin] as LoRA
+    [KVConnectorModelRunnerMixin] as KVConnector
+  }
+}
+
+package "External" as ext {
+  [SchedulerOutput\n(v1.core.sched.output)] as SchedulerOutput
+  [Model(nn.Module)] as Model
+  [Forward context\n(set_forward_context)] as ForwardCtx
+  [ModelRunnerOutput\n(v1.outputs)] as ModelRunnerOutput
+}
+
+' ===== 高层依赖 =====
+GPUModelRunner --> SchedulerOutput : update_states / prepare_inputs
+GPUModelRunner --> Model : forward + compute_logits
+GPUModelRunner --> ModelRunnerOutput : sample_tokens() output
+
+' ===== 组内关系 =====
+GPUModelRunner *-- RequestState
+GPUModelRunner *-- InputBuffers
+GPUModelRunner *-- BlockTables
+GPUModelRunner *-- CudaGraphManager
+GPUModelRunner *-- Sampler
+GPUModelRunner *-- KVCaches
+GPUModelRunner ..> SamplingMetadata
+GPUModelRunner ..> InputBatch
+
+RequestState *-- ExtraData
+RequestState --> SamplingMetadata : make_sampling_metadata()\n(+ expand for spec decode)
+
+InputBuffers --> InputBatch : slices tensors for this step
+BlockTables --> BuildAttnMeta : gather_block_tables()\ncompute_slot_mappings()
+BuildAttnMeta --> AttnBuilder
+AttnBuilder --> AttnBackend
+
+GPUModelRunner --> BuildAttnMeta : prepare_inputs()
+GPUModelRunner --> ForwardCtx : set_forward_context(attn_metadata,\n num_tokens, dp padding, cudagraph mode)
+
+CudaGraphManager --> ForwardCtx : capture_graph()/replay
+CudaGraphManager --> Model : capture/run
+DPUtils --> CudaGraphManager : num_tokens_across_dp
+AsyncBarrier ..> GPUModelRunner : overlap CPU all-reduce & GPU exec\n(async scheduling)
+
+Sampler --> Logprobs : topk logprobs (optional)
+GPUModelRunner --> PostUpdate : postprocess()
+
+GPUModelRunner ..> StructuredOutputs : grammar bitmask (optional)
+GPUModelRunner ..> Speculator : propose_draft/rejection_sample (optional)
+GPUModelRunner ..> LoRA : set_active_loras (optional)
+GPUModelRunner ..> KVConnector : remote KV xfer (optional)
+
+note right of GPUModelRunner
+关键分层（按调用顺序）：
+1) update_states(): RequestState + BlockTables\n
+2) prepare_inputs(): InputBuffers/InputBatch + BlockTables + build_attn_metadata\n
+3) execute: CudaGraphManager 或 eager forward\n
+4) sample_tokens(): Sampler(+logprobs) + structured output + postprocess\n
+end note
+
+@enduml

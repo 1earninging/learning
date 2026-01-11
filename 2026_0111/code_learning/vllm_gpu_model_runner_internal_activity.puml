@@ -1,0 +1,108 @@
+@startuml
+title vLLM V1 - GPUModelRunner 内部执行细节（函数/数据流 Activity）
+
+skinparam shadowing false
+skinparam activityBorderColor #444444
+skinparam activityBackgroundColor #F8F8F8
+
+start
+
+:Input: SchedulerOutput;
+
+if (total_num_scheduled_tokens == 0\nand not dummy_run?) then (yes)
+  :async_barrier(input_prep_event);
+  :update_states(scheduler_output)\n- RequestState.remove(preempted/finished)\n- RequestState.add(new)\n- BlockTables.append_block_ids(...);
+  :return EMPTY_MODEL_RUNNER_OUTPUT;
+  stop
+else (no)
+endif
+
+:get_cudagraph_and_dp_padding(scheduler_output)\n- CudaGraphManager.get_cudagraph_size(...)\n- dp_utils.get_batch_metadata_across_dp(...)\n=> (cudagraph_mode, num_tokens_after_padding, num_tokens_across_dp);
+
+:async_barrier(input_prep_event);
+
+partition "1) update_states" {
+  :update_states(scheduler_output);
+  note right
+  维护运行中 req 的“状态表”与 KV block 映射：
+  - RequestState: req_id<->index、prefill_token_ids、prefill_len、num_computed_tokens...
+  - BlockTables: 每个 request 的 block_table 追加/覆盖
+  end note
+}
+
+if (num_tokens_after_padding == 0?) then (yes)
+  :return EMPTY_MODEL_RUNNER_OUTPUT;
+  stop
+else (no)
+endif
+
+partition "2) prepare_inputs" {
+  :prepare_inputs(...)\n核心步骤（简化）：
+  note right
+  - 排序 req_ids（decode 优先）\n
+  - idx_mapping: batch_idx -> req_state_idx\n
+  - BlockTables.gather_block_tables(idx_mapping)\n
+  - query_start_loc = cumsum(num_scheduled_tokens)\n
+  - prepare_prefill_inputs(...) -> input_ids\n
+  - prepare_pos_seq_lens(...) -> positions/seq_lens\n
+  - combine_sampled_and_draft_tokens(...) -> logits_indices\n
+  - BlockTables.compute_slot_mappings(query_start_loc, positions)\n
+  - build_attn_metadata(..., block_tables, slot_mappings)\n
+  end note
+  :SamplingMetadata = RequestState.make_sampling_metadata(...);
+  if (has draft tokens?) then (yes)
+    :SamplingMetadata = expand_sampling_metadata(...);
+  endif
+  if (LoRA enabled?) then (yes)
+    :LoRAModelRunnerMixin._set_active_loras(...);
+  endif
+}
+
+partition "3) execute forward" {
+  if (cudagraph_mode == FULL?) then (yes)
+    :hidden_states = CudaGraphManager.run(num_tokens_after_padding);
+  else (no)
+    :with set_forward_context(attn_metadata,\n num_tokens, num_tokens_across_dp,\n cudagraph_runtime_mode):;
+    :hidden_states = model.forward(input_ids, positions);
+  endif
+  :cache execute_model_state =\n(hidden_states, input_batch, sampling_metadata);
+  :return None;
+}
+
+partition "4) sample_tokens" {
+  :load execute_model_state;
+  :sample_hidden_states = hidden_states[logits_indices];
+  :logits = model.compute_logits(sample_hidden_states);
+  if (GrammarOutput present?) then (yes)
+    :apply_grammar_bitmask(logits, ...)\n(in-place);
+  endif
+  :sampler_output = Sampler(logits, sampling_metadata)\n(+ logprobs optional, + nan stats optional);
+
+  if (spec decode enabled?) then (yes)
+    :rejection_sample(...)\n=> adjust sampled_token_ids + num_sampled;
+  endif
+
+  :prompt_logprobs_dict = compute_prompt_logprobs(hidden_states, input_batch)\n(when requested);
+
+  :async_output = AsyncOutput(\nModelRunnerOutput stub + GPU tensors,\nrecord copy_event on copy_stream);
+}
+
+partition "5) postprocess / state advance" {
+  :post_update(...)\n- advance num_computed_tokens\n- update last_sampled_tokens\n- update output_bin_counts\n- handle rejected/accepted counts;
+  :advance num_computed_prefill_tokens\n(for chunked prefill);
+
+  if (spec decode enabled?) then (yes)
+    :draft_tokens = Speculator.propose(...);
+    :RequestState.draft_tokens[idx_mapping] = draft_tokens;
+  endif
+}
+
+if (async_scheduling?) then (yes)
+  :return AsyncModelRunnerOutput;
+else (no)
+  :return async_output.get_output()\n=> ModelRunnerOutput;
+endif
+
+stop
+@enduml
+
