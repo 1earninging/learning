@@ -1,0 +1,5 @@
+{
+  "python.defaultInterpreterPath": "/mnt/d/vllm/vllm/bin/python",
+  "python.terminal.activateEnvironment": true
+}
+
