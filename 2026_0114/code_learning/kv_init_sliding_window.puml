@@ -1,0 +1,92 @@
+@startuml
+title Sliding-Window + Full：KVCacheSpec -> KVCacheGroups -> KVCacheConfig -> Coordinator 选择（初始化阶段）
+
+skinparam linetype ortho
+skinparam shadowing false
+skinparam activity {
+  BackgroundColor #ffffff
+  BorderColor #333333
+}
+skinparam noteBackgroundColor #fff8dc
+skinparam noteBorderColor #333333
+
+start
+
+:Worker/模型侧收集每层 KVCacheSpec\n(full layers => FullAttentionSpec\nsw layers => SlidingWindowSpec);
+note right
+Spec 典型字段：
+- block_size
+- kv_hidden_size(由 num_kv_heads/head_size/dtype 等决定)
+- sliding_window (仅 sw)
+end note
+
+:多 worker 场景：合并各 worker 的 kv_cache_specs\n(同名层 spec 必须一致);
+note right
+对应代码路径（概念上）：
+- kv_cache_utils.get_kv_cache_configs()
+  1) merge specs across workers
+  2) get_kv_cache_groups() 做分组（也会做 spec unification）
+  3) auto-fit max_model_len / memory check（用 groups 考虑 padding）
+  4) 为每个 worker 生成 KVCacheConfig
+end note
+
+if (disable_hybrid_kv_cache_manager == true ?) then (yes)
+  :unify_hybrid_kv_cache_specs(kv_cache_spec)\n把 hybrid spec “强制统一”成单一类型;\n(把 SlidingWindowSpec 等转换为 FullAttentionSpec 等);
+  note right
+这样后续可以走“非 HMA”路径\n但会牺牲 sliding-window 的节省效果
+end note
+endif
+
+if (模型 attention-free ?) then (yes)
+  :groups = []\n(允许 attention-free 模型);
+  stop
+endif
+
+if (所有 layer spec 完全相同？) then (yes)
+  :groups = 1 个 group\n(UniformSpec);
+  note right
+绝大多数“纯 full”模型走这里
+end note
+else (no)
+  if (所有层需要的 token slots 相同？\n(UniformType)) then (yes)
+    :groups = 1 个 group\n(UniformTypeKVCacheSpecs)\n比如全是相同 window 的 sw;
+  else (no)
+    :unify_kv_cache_spec_page_size(kv_cache_spec)\n统一每个 group 的“物理 page size”;
+    note right
+sliding+full 的关键：\n同一 BlockPool 只能有一种 page size\n所以必须做 page size 统一/对齐
+end note
+
+    :按“uniform page size + group_size 启发式”分组\n_get_kv_cache_groups_uniform_page_size(...);
+    note right
+对 sliding+full：通常会产生多个 groups：
+- 1 个 full group（包含若干 full layers）
+- 1..N 个 sw groups（按 group_size 切分/可能 padding）
+end note
+  endif
+endif
+
+:得到 global_kv_cache_groups（全模型视角）;
+:若 max_model_len=-1 => auto-fit\n用 groups 估算/二分 fit;
+:memory check（同样用 groups，正确考虑 padding）;
+
+:为每个 worker 生成 KVCacheConfig\n（按 global groups 的“层比例”投影到该 worker 的 layer 子集）;
+
+:选择 KVCacheCoordinator;
+if (enable_caching == false ?) then (no prefix cache)
+  :KVCacheCoordinatorNoPrefixCache;
+else (prefix cache on)
+  if (len(kv_cache_groups) == 1 ?) then (unitary)
+    :UnitaryKVCacheCoordinator;
+  else (hybrid)
+    :HybridKVCacheCoordinator;
+    note right
+sliding-window + full 的 HMA prefix caching\n靠 HybridKVCacheCoordinator 做“交集命中”：
+1) 先求 full 的最长命中长度 L_full（左->右）
+2) 再在 L_full 内求 sw 的命中长度 L（右->左找尾部连续命中）
+3) 截断 full 到 L，合并 blocks
+end note
+  endif
+endif
+
+stop
+@enduml

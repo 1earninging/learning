@@ -1,0 +1,82 @@
+@startuml
+title Sliding-Window + Full：请求增长时的 blocks 形态（full 持久、sw 置 NULL 并释放窗口外）
+
+skinparam linetype ortho
+skinparam shadowing false
+skinparam noteBackgroundColor #fff8dc
+skinparam noteBorderColor #333333
+
+participant "Scheduler" as S
+participant "KVCacheCoordinator(Hybrid)" as CO
+participant "FullAttentionManager\n(group: full)" as FAM
+participant "SlidingWindowManager\n(group: sw)" as SWM
+participant "BlockPool" as BP
+
+note over CO
+前提：KVCacheConfig 中存在多个 kv_cache_groups，例如：\n- group 0: full layers\n- group 1..N: sw layers\n每个 group 都有一个 SingleTypeKVCacheManager 实例。\n(注意：HybridKVCacheCoordinator 要求 full groups 与 other groups 的 group_id 不交错)
+end note
+
+== 1) 新请求：先做 prefix cache 命中（full + sw 交集） ==
+S -> CO : find_longest_cache_hit(block_hashes, max_cache_hit_length)
+CO -> FAM : Full.find_longest_cache_hit(..., max_length=max_cache_hit_length)\n(左->右连续命中)
+FAM -> BP : get_cached_block(hash[i], full_group_ids) 反复
+BP --> FAM : hit/miss
+FAM --> CO : hit_blocks_full, L_full
+
+CO -> SWM : SW.find_longest_cache_hit(..., max_length=L_full)\n(右->左找“尾部连续命中”)
+SWM -> BP : get_cached_block(hash[i], sw_group_ids) 扫描(右->左)
+BP --> SWM : hit/miss
+SWM --> CO : hit_blocks_sw, L
+
+CO -> CO : truncate full blocks to length L\nmerge(full, sw) -> hit_blocks
+CO --> S : hit_blocks, hit_length=L
+
+note right of SWM
+sw 的命中不是“从头连续命中”，而是“尾部窗口连续命中”。\n因此 hit_blocks_sw 可能长这样：\n[NULL, NULL, ..., block_k, block_{k+1}]\n前面 NULL 表示这些 token 在 sw 里无需保留(窗口外)
+end note
+
+== 2) 分配：每个 group 都维护自己的 blocks 列表，但 sw 会释放窗口外 ==
+S -> CO : save_new_computed_blocks(request_id, hit_blocks)
+
+S -> CO : allocate_new_blocks(request_id, num_tokens=当前长度)
+CO -> FAM : allocate_new_blocks(request_id, num_tokens)
+FAM -> BP : get_new_blocks(...)
+BP --> FAM : blocks append 到 req_to_blocks[request_id]
+
+CO -> SWM : allocate_new_blocks(request_id, num_tokens)
+SWM -> BP : get_new_blocks(...)
+BP --> SWM : blocks append 到 req_to_blocks[request_id]
+
+note over FAM,SWM
+此时两边都有“与长度相关”的 blocks 列表：\n- full：基本从头到尾都需要真实 blocks（不提前释放）\n- sw：逻辑上也有前缀位置，但稍后会把窗口外块置 NULL 并 free
+end note
+
+== 3) 每步 forward 后：sw 释放窗口外 blocks（full 不释放） ==
+S -> CO : remove_skipped_blocks(request_id, num_computed_tokens)
+CO -> FAM : remove_skipped_blocks(...)
+note right of FAM
+FullAttentionManager.get_num_skipped_tokens() = 0\n=> 不释放
+end note
+
+CO -> SWM : remove_skipped_blocks(...)
+SWM -> SWM : num_skipped_tokens = num_computed_tokens - sliding_window + 1
+SWM -> SWM : 将 [0 .. skipped) 覆盖到 block 粒度
+SWM -> BP : free_blocks(removed_blocks)\n并把对应位置 blocks[i]=NULL
+BP --> SWM : ok
+
+note right of SWM
+效果：随着请求增长，sw 的 req_to_blocks[request_id]\n会呈现“前面越来越多 NULL，尾部窗口是真实 blocks”。\n这就是 sliding-window 节省显存的核心。
+end note
+
+== 4) cache_blocks：将 full blocks / sw 需要缓存的部分写入 BlockPool（按 group_id 隔离） ==
+S -> CO : cache_blocks(request, num_computed_tokens)
+CO -> FAM : cache_blocks(...)
+FAM -> BP : cache_full_blocks(..., kv_cache_group_id=full_id)
+CO -> SWM : cache_blocks(...)
+SWM -> BP : cache_full_blocks(..., kv_cache_group_id=sw_id)
+
+note over BP
+BlockPool 的缓存命中维度包含 group_id：\n同一个 token 的 block_hash 在 full 与 sw 是“分别缓存/分别淘汰”的。
+end note
+
+@enduml

@@ -1,0 +1,117 @@
+@startuml
+title vLLM v1 KV Cache 分配与前缀缓存命中流程（包含 HybridKVCacheCoordinator）
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam shadowing false
+skinparam linetype ortho
+
+actor Scheduler as S
+participant "KVCacheManager" as KVM
+participant "KVCacheCoordinator\n(NoPrefix / Unitary / Hybrid)" as CO
+participant "BlockPool" as BP
+participant "SingleTypeKVCacheManager[*]" as STM
+participant "FullAttentionManager" as FAM
+participant "OtherAttentionManager\n(SlidingWindow/ChunkedLocal/Mamba...)" as OAM
+participant "ModelRunner/Worker" as W
+
+note over S,KVM
+前置：kv_cache_utils.get_kv_cache_groups() 把 layer 按 KVCacheSpec 分组
+- uniform spec -> 1 group
+- uniform type -> 1 group
+- hybrid -> 统一 page size -> 多 group
+end note
+
+== (A) 新请求进入 / 需要做 prefix caching 命中 ==
+S -> KVM : on_new_request(request)\n准备 block_hashes / max_cache_hit_length
+KVM -> CO : find_longest_cache_hit(block_hashes, max_cache_hit_length)
+
+alt enable_caching=false 或不支持
+  CO --> KVM : hit_blocks=空, hit_length=0
+else enable_caching=true
+  alt 只有 1 个 group (Unitary)
+    CO -> STM : SingleType.find_longest_cache_hit(...)\n(kv_cache_group_ids=[0], alignment_tokens=block_size)
+    STM -> BP : get_cached_block(block_hash, [0]) 반복
+    BP --> STM : cached_block? (按 group 维度隔离)
+    STM --> CO : hit_blocks (可能做 eagle 对齐/丢最后块)
+    CO --> KVM : hit_blocks, hit_length
+  else 多 group (Hybrid; full + X)
+    note over CO
+    Hybrid 核心：先 full 命中长度 L_full\n再在 L_full 内求 X 命中得到 L\n最后截断 full 到 L 并合并 blocks
+    end note
+
+    CO -> FAM : FullAttentionManager.find_longest_cache_hit(...)\n(kv_cache_group_ids=full_group_ids,\nalignment_tokens=lcm_block_size)
+    FAM -> BP : get_cached_block(hash_i, full_group_ids) 循环(左->右)
+    BP --> FAM : cached blocks tuple or miss
+    FAM --> CO : hit_blocks_full, L_full
+
+    CO -> OAM : OtherManager.find_longest_cache_hit(...)\n(max_length=L_full,\nkv_cache_group_ids=other_group_ids,\nalignment_tokens=lcm_block_size)
+    OAM -> BP : get_cached_block(hash_i, other_group_ids)\n(例如 sliding window 右->左找尾部连续命中)
+    BP --> OAM : cached blocks tuple or miss
+    OAM --> CO : hit_blocks_other, L
+
+    CO -> CO : truncate(hit_blocks_full, to length=L)\nmerge(full, other) by group id order
+    CO --> KVM : hit_blocks, hit_length=L
+  end
+end
+
+== (B) 计算需要分配多少新 blocks（按每个 group 的 manager 汇总） ==
+S -> KVM : num_tokens_to_have_slots = prompt_len 或 prompt_len+decode_step
+KVM -> CO : get_num_blocks_to_allocate(request_id,\nnum_tokens, new_computed_blocks=hit_blocks,\nnum_encoder_tokens)
+
+loop for each manager in single_type_managers
+  alt manager is CrossAttentionManager
+    CO -> STM : get_num_blocks_to_allocate(request_id,\nnum_encoder_tokens, [])
+  else normal (full/sliding/...)
+    CO -> STM : get_num_blocks_to_allocate(request_id,\nnum_tokens, new_computed_blocks[i])
+  end
+end
+CO --> KVM : total_num_blocks_to_allocate
+
+== (C) 保存命中的 computed blocks（把 prefix 命中的 blocks 先挂到 req_to_blocks） ==
+KVM -> CO : save_new_computed_blocks(request_id, hit_blocks)
+loop each STM
+  CO -> STM : save_new_computed_blocks(request_id, hit_blocks[i])
+end
+
+== (D) 真正分配新的 blocks（每个 group 各分各的；但 sliding/local 会后续释放窗口外） ==
+KVM -> CO : allocate_new_blocks(request_id, num_tokens, num_encoder_tokens)
+loop each STM
+  CO -> STM : allocate_new_blocks(request_id,\nnum_tokens 或 num_encoder_tokens)
+  STM -> BP : get_new_blocks(num_new_blocks)
+  BP --> STM : new_blocks
+end
+CO --> KVM : new_blocks_per_group
+
+== (E) Worker 执行 prefill/decode；并在必要时释放“窗口外 blocks” ==
+KVM -> W : run_model_forward(request, blocks_per_group,\n可能包含 NULL blocks)
+W --> KVM : forward_done(num_computed_tokens updated)
+
+KVM -> CO : remove_skipped_blocks(request_id, num_computed_tokens)
+loop each STM
+  CO -> STM : remove_skipped_blocks(request_id, num_computed_tokens)
+  alt this attention type has skipped tokens (e.g. sliding window)
+    STM -> BP : free_blocks(removed_blocks)\n并把 blocks[i]=NULL
+  else full attention (get_num_skipped_tokens=0)
+    note right of STM
+    full attention 不释放早期 token blocks\n直到 request 结束
+    end note
+  end
+end
+
+== (F) 把已完成的 full blocks 放入 prefix cache（按 group_id 隔离的 key） ==
+KVM -> CO : cache_blocks(request, num_computed_tokens)
+loop each STM
+  CO -> STM : cache_blocks(request, num_computed_tokens)
+  STM -> BP : cache_full_blocks(..., kv_cache_group_id)
+end
+
+== (G) 请求结束/中止：释放所有 group 的 blocks ==
+S -> KVM : finish_request(request_id)
+KVM -> CO : free(request_id)
+loop each STM
+  CO -> STM : free(request_id)
+  STM -> BP : free_blocks(req_blocks)
+end
+
+@enduml
