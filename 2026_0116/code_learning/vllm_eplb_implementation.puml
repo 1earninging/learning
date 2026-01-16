@@ -1,0 +1,140 @@
+@startuml vllm_eplb_component
+title vLLM EPLB - 组件/数据流概览
+
+skinparam componentStyle rectangle
+skinparam wrapWidth 240
+skinparam maxMessageSize 120
+
+package "vLLM" {
+  [GPUModeRunner\n(vllm/v1/worker/gpu_model_runner.py)] as GMR
+  [EplbState\n(vllm/distributed/eplb/eplb_state.py)] as ES
+  [DefaultEplbPolicy\n(vllm/distributed/eplb/policy/default.py)] as POL
+  [rebalance_execute\n(vllm/distributed/eplb/rebalance_execute.py)] as EXEC
+  [async_worker\n(vllm/distributed/eplb/async_worker.py)] as AW
+  [FusedMoE Layer\n(vllm/model_executor/layers/fused_moe/layer.py)] as LAYER
+  [eplb_map_to_physical_and_record\n(vllm/model_executor/layers/fused_moe/fused_moe.py)] as MAPREC
+  [MixtureOfExperts Model\n(expert_weights, moe_layers)] as MOE
+  [EP ProcessGroup\n(get_ep_group().device_group)] as EPG
+}
+
+note right of ES
+  核心状态:
+  - physical_to_logical_map  (layers, num_physical_experts)
+  - logical_to_physical_map  (layers, num_logical_experts, max_slots)
+  - logical_replica_count    (layers, num_logical_experts)
+  - expert_load_pass         (layers, num_physical_experts)
+  - expert_load_window       (window, layers, num_physical_experts)
+  - step_interval/window_size/use_async/policy
+end note
+
+note right of MAPREC
+  路由阶段做两件事:
+  1) logical expert -> physical expert\n   (按 replica_count 做确定性“伪随机”挑选)
+  2) expert_load_view.scatter_add_ 累加 token 计数
+end note
+
+GMR --> ES : 初始化/持有 EPLB 状态\n(enable_eplb)
+GMR --> MOE : load_model()
+ES --> MOE : add_model()\nmodel.set_eplb_state(...)
+LAYER --> MAPREC : forward 时调用\n(enable_eplb)
+MAPREC --> ES : 写入 expert_load_pass\n(实际上写入的是 layer 的 expert_load_view)
+
+ES --> POL : policy.rebalance_experts()\n(输入: global logical load window)
+POL --> ES : 输出新映射:\nphy2log / log2phy / logcnt
+
+ES --> EXEC : rearrange_expert_weights_inplace()\n(同步模式: 逐层 move_to_buffer/move_from_buffer)
+EXEC --> EPG : batch_isend_irecv / all_gather (profile)\n跨 rank 交换 expert rows
+
+ES --> AW : start_async_worker()\n(异步模式: 后台 transfer_layer)
+AW --> EXEC : transfer_layer(old,new,layer)\n填充 expert_buffer + CUDA event
+GMR --> ES : step()\n每个 forward 后推进
+ES --> ES : 更新滑窗 + 计数\n到点触发 rearrange()
+ES --> GMR : (异步) move_to_workspace()\n主线程落盘并更新 mapping
+
+legend left
+  === 关键点 ===
+  - 统计: 在 MoE 路由阶段直接统计 physical expert 的 token 计数
+  - 汇总: physical->logical (scatter_add) + all_reduce 得到全局逻辑负载
+  - 决策: DeepSeek 风格 packing+replication(+hierarchical) 计算新布局
+  - 生效: P2P 交换权重行 + 更新 mapping，使后续路由命中新的 physical slots
+endlegend
+
+@enduml
+
+
+@startuml vllm_eplb_sequence
+title vLLM EPLB - 一次周期 (统计→触发→重排→生效) 时序图
+
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 140
+skinparam wrapWidth 240
+
+participant "GPUModeRunner\n(gpu_model_runner.py)" as GMR
+participant "MixtureOfExperts Model\n(expert_weights)" as MOE
+participant "FusedMoE Layer\n(layer.py)" as LAYER
+participant "eplb_map_to_physical_and_record\n(fused_moe.py)" as MAPREC
+participant "EplbState\n(eplb_state.py)" as ES
+participant "DefaultEplbPolicy\n(policy/default.py)" as POL
+participant "rebalance_execute\n(rebalance_execute.py)" as EXEC
+participant "EP Group\n(get_ep_group())" as EPG
+participant "async_worker\n(async_worker.py)" as AW
+
+== 初始化 ==
+GMR -> ES : ES = EplbState(parallel_config, device)
+GMR -> MOE : load_model()
+GMR -> ES : add_model(MOE, model_config, ...)\n构建初始 mapping + buffers
+ES -> MOE : model.set_eplb_state(expert_load_pass,\n logical_to_physical_map,\n logical_replica_count)
+
+== 每个 forward: 路由统计 ==
+LAYER -> MAPREC : topk_ids(logical) + maps + load_view
+MAPREC -> MAPREC : logical->physical\n(replica_indices = pos % replica_count)
+MAPREC -> MAPREC : expert_load_view.scatter_add_(physical_id, +1)
+MAPREC --> LAYER : 返回 topk_ids(physical)\n用于 dispatch/combine
+
+== forward 结束: 推进 EPLB ==
+GMR -> ES : eplb_step()\nES.step(is_dummy/is_profile, log_stats)
+ES -> ES : 若非 dummy:\nload_pass 写入 load_window[step]\nload_pass 清零\nstep++ (ring buffer)
+ES -> ES : expert_rearrangement_step++\n到达 step_interval?
+
+alt 未到触发点
+  ES --> GMR : return
+else 到达触发点: rearrange()
+  ES -> ES : 汇总窗口统计\nphysical_load_window -> logical_load_window\n(scatter_add on mapping)
+  ES -> EPG : all_reduce(logical_load_window)\n得到全局 logical load
+
+  ES -> POL : rebalance_experts(weight=global_logical_load,\n num_replicas, num_groups, num_nodes, num_ranks,\n old_global_expert_indices)
+  POL --> ES : new_phy2log/new_log2phy/new_logcnt
+
+  alt 同步模式(或 profile)
+    ES -> EXEC : rearrange_expert_weights_inplace(old_phy2log,\n new_phy2log, expert_weights, ep_group)
+    loop each MoE layer
+      EXEC -> EPG : batch_isend_irecv (send/recv expert rows)
+      EXEC -> EXEC : move_to_buffer + move_from_buffer\n本地 copy / 远端 recv / duplicate
+    end
+    ES -> ES : 更新 mapping 张量\nphysical_to_logical_map/logical_to_physical_map/logical_replica_count
+  else 异步模式(use_async)
+    ES -> ES : 保存 new maps 到 model_state.new_*\n标记 rebalanced=True
+    ES -> AW : rearrange_event.set()\n唤醒后台线程
+    AW -> EXEC : transfer_layer(layer=k)\n异步发起 P2P 收发到 expert_buffer
+    note right of AW
+      后台线程逐层:
+      - buffer_lock 保护
+      - CUDA stream + event 记录完成
+      - ep_buffer_ready=1 让主线程消费
+    end note
+    loop 主线程在后续 step() 里轮询
+      ES -> EPG : all_reduce(buffer_ready flag)\n所有 rank buffer_ready?
+      ES -> ES : move_to_workspace():\n等待 CUDA event\nmove_from_buffer 到真正权重\n更新该层 mapping\nlayer_to_transfer++
+    end
+    ES -> ES : 所有层完成后 post_eplb()\n清理 new_*，rebalanced=False
+  end
+end
+
+== 生效 ==
+note over LAYER,MAPREC
+  新 mapping 生效后:\n下一次路由 MAPREC 会把 logical expert\n映射到“新的 physical slots”，并继续累计新窗口统计
+end note
+
+@enduml
+
+
