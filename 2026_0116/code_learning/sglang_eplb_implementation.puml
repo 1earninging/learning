@@ -1,0 +1,143 @@
+@startuml sglang_eplb_component
+title SGLang EPLB - 组件/数据流概览
+
+skinparam componentStyle rectangle
+skinparam wrapWidth 240
+skinparam maxMessageSize 120
+
+package "SGLang SRT" {
+  [ModelRunner\n(update_expert_location)] as MR
+  [EPLBManager\n(srt/eplb/eplb_manager.py)] as MGR
+  [ExpertDistributionRecorder\n(srt/eplb/expert_distribution.py)] as REC
+  [Accumulator/Buffer\n(stat/per_token/per_pass)] as ACC
+  [ExpertLocationMetadata\n(srt/eplb/expert_location.py)] as META
+  [ExpertLocationUpdater\n(srt/eplb/expert_location_updater.py)] as UPD
+  [EPLB Algorithms\n(srt/eplb/eplb_algorithms/*)] as ALG
+  [ElasticEPStateManager\n(srt/elastic_ep/*)\n(optional)] as EEP
+  [EP ProcessGroup\n(torch.distributed)] as DIST
+  [MoE Layers/Weights\n(routed_experts_weights_of_layer)] as WEIGHTS
+}
+
+note right of REC
+  recorder 收集统计的来源可能是:
+  - on_select_experts(topk_ids)\n  (直接按 physical id 统计)
+  - on_deepep_dispatch_*()\n  (DeepEP 下从 dispatch 侧拿统计/近似统计)
+  结果统一形成 global_physical_count\n(layers, num_physical_experts)
+end note
+
+note right of ACC
+  StatAccumulator:
+  - circular buffer (buffer_size)\n  缓存多次 forward 的 global_physical_count
+  - dump 时转成 logical_count\n    (scatter_add by physical_to_logical_map)\n  - all_reduce 汇总成全局 logical_count
+
+  也可输出 balancedness/utilization\n(用于阈值判断是否 rebalance)
+end note
+
+note right of META
+  核心映射:
+  - physical_to_logical_map (layers, num_physical_experts)
+  - logical_to_all_physical_map (layers, num_logical_experts, slots)\n    (padding -1)
+  - logical_to_all_physical_map_num_valid\n  - (optional) logical_to_rank_dispatch_physical_map\n    (static dispatch 预计算)
+end note
+
+MR --> MGR : 每次 forward 结束\non_forward_pass_end()
+MGR --> REC : start_record()/dump_record()
+REC --> ACC : append(single_pass_data)\n(窗口/缓冲)
+ACC --> MGR : dump_record(output_mode="object")\nlogical_count + utilization
+
+MGR --> META : ExpertLocationMetadata.init_by_eplb(\nlogical_count)
+META --> ALG : eplb_algorithms.rebalance_experts(...)\n(algorithm=auto/deepseek/elasticity_aware/...)
+ALG --> META : 输出 new physical_to_logical_map\n+ logical_to_all_physical_map
+
+MR --> UPD : update_expert_location(metadata, layer_ids)
+UPD --> WEIGHTS : P2P 搬迁权重行\n(按 new/old mapping)
+UPD --> DIST : batch_isend_irecv(P2POp*)\n跨 rank 交换 tensor rows
+UPD --> META : old_metadata.update(new_metadata,\n update_layer_ids)
+
+EEP --> ALG : elasticity_aware 需要 active_ranks\n(仅 elastic EP 场景)
+
+legend left
+  === 关键点 ===
+  - 统计与重排解耦：REC/ACC 负责统计窗口，MGR 负责触发，UPD 负责搬权重生效
+  - 算法可插拔：deepseek / deepseek_vec / hierarchical / elasticity_aware
+  - 生效粒度：支持按 layer chunk 更新（减少一次性迁移开销）
+endlegend
+
+@enduml
+
+
+@startuml sglang_eplb_sequence
+title SGLang EPLB - 一次周期 (统计→触发→计算新布局→迁移权重→更新元数据) 时序图
+
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 150
+skinparam wrapWidth 240
+
+participant "MoE Router/Dispatch\n(srt/layers/moe/*)" as ROUTER
+participant "ExpertDistributionRecorder\n(expert_distribution.py)" as REC
+participant "Accumulator(Buffer)\n(StatAccumulator)" as ACC
+participant "EPLBManager\n(eplb_manager.py)" as MGR
+participant "ExpertLocationMetadata\n(expert_location.py)" as META
+participant "EPLB Algorithms\n(eplb_algorithms/*)" as ALG
+participant "ModelRunner\n(update_expert_location)" as MR
+participant "ExpertLocationUpdater\n(expert_location_updater.py)" as UPD
+participant "torch.distributed\n(batch_isend_irecv)" as DIST
+
+== 每次 forward: 统计 ==
+ROUTER -> REC : on_select_experts(topk_ids)\n或 on_deepep_dispatch_*(...)
+REC -> ACC : append(global_physical_count)\n写入 circular buffer
+
+== forward 结束: manager 推进 ==
+MR -> MGR : on_forward_pass_end()\n(内部 generator)
+alt 未到 rebalance 周期
+  MGR --> MR : return
+else 到达 eplb_rebalance_num_iterations
+  MGR -> REC : dump_record(output_mode="object")\n(并 reset recorder)
+  REC -> ACC : dump():\nlogical_count_of_buffered_step\n(all_reduce SUM)
+  ACC --> MGR : logical_count + avg_utilization_over_window
+
+  opt 利用率阈值跳过
+    MGR -> MGR : if avg_utilization > threshold:\nskip rebalance
+  end
+
+  == 计算新布局 (metadata) ==
+  MGR -> META : ExpertLocationMetadata.init_by_eplb(server_args,\n model_config, logical_count)
+  META -> ALG : rebalance_experts(tokens_per_expert=logical_count,\n num_physical_experts, num_local_physical_experts,\n num_groups, num_nodes, algorithm=compute_algorithm(...))
+  ALG --> META : new physical_to_logical_map\n+ logical_to_all_physical_map\n(+ replica counts)
+
+  == 分 chunk 更新 layers ==
+  loop each layer chunk (eplb_rebalance_layers_per_chunk)
+    MGR -> MR : update_expert_location(new_metadata,\n update_layer_ids)
+    MR -> UPD : updater.update(weights_of_layer,\n old_meta, new_meta, update_layer_ids,\n nnodes, rank)
+
+    loop each layer_id in update_layer_ids
+      note right of UPD
+        per-layer 的目标是把本 rank 的\nlocal physical slots 变成 new mapping 指定的 logical expert
+      end note
+
+      alt case 1: unchanged (old == new at dst)
+        UPD -> UPD : 不动
+      else case 2: same-gpu (本 rank 旧 mapping 中已有该 logical)
+        UPD -> UPD : temp_buffer[dst] = weight[src_local]\n随后 copy back
+      else case 3: free-rider (本 rank 更早 dst 已经拿到同 logical)
+        UPD -> UPD : 复用 earlier dst 的 temp_buffer\n避免重复通信
+      else case 4/5: 需要通信
+        UPD -> UPD : 选择 src_rank:\n- same-node 优先用同 node 源\n- cross-node 从所有源公平分配
+        UPD -> DIST : 构造 irecv(temp_buffer[dst])\n+ isend(weight[src]) 列表
+        DIST --> UPD : batch_isend_irecv(reqs).wait()
+        UPD -> UPD : copy temp_buffer -> weight[dst]
+      end
+    end
+
+    UPD -> META : old_meta.update(new_meta, update_layer_ids)\n(同步更新映射)
+  end
+end
+
+== 生效 ==
+note over ROUTER,META
+  mapping 更新后，后续路由/dispatch 会按\n新的 physical_to_logical_map 与 logical_to_all_physical_map\n选择/定位专家权重，从而达到负载均衡
+end note
+
+@enduml
+
+
