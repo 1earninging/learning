@@ -1,0 +1,212 @@
+date,day,task_kind,task_tag,topic,task,done,time_spent_min,confidence_1to5,notes,review_D+1,review_D+4,review_D+10,review_D+21
+2026-02-15,1,summary,,CUDA 编程模型：grid/block/thread、warp、SIMT，索引计算,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-02-16,2026-02-19,2026-02-25,2026-03-08
+2026-02-15,1,deliverable,写,CUDA 编程模型：grid/block/thread、warp、SIMT，索引计算,写：CUDA kernel 做 vector add（含边界检查），验证正确性。,,,,,2026-02-16,2026-02-19,2026-02-25,2026-03-08
+2026-02-15,1,deliverable,讲,CUDA 编程模型：grid/block/thread、warp、SIMT，索引计算,讲：warp 是什么？为什么 divergence 会慢？,,,,,2026-02-16,2026-02-19,2026-02-25,2026-03-08
+2026-02-15,1,deliverable,测,CUDA 编程模型：grid/block/thread、warp、SIMT，索引计算,测：记录 kernel time；对比不同 blockDim（128/256/512）。,,,,,2026-02-16,2026-02-19,2026-02-25,2026-03-08
+2026-02-16,2,summary,,CUDA 内存层级：global/L2/shared/register、延迟与带宽直觉,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-02-17,2026-02-20,2026-02-26,2026-03-09
+2026-02-16,2,deliverable,写,CUDA 内存层级：global/L2/shared/register、延迟与带宽直觉,写：CUDA kernel 做 memcpy（read-only / write-only），做简单带宽测试。,,,,,2026-02-17,2026-02-20,2026-02-26,2026-03-09
+2026-02-16,2,deliverable,讲,CUDA 内存层级：global/L2/shared/register、延迟与带宽直觉,讲：带宽上限怎么估？roofline 思路（概念）。,,,,,2026-02-17,2026-02-20,2026-02-26,2026-03-09
+2026-02-16,2,review,D-1,复习 Day 1,闭卷 2 分钟讲清楚 Day 1 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-02-17,3,summary,,访存合并（coalescing）与对齐；AoS vs SoA,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-02-18,2026-02-21,2026-02-27,2026-03-10
+2026-02-17,3,deliverable,写,访存合并（coalescing）与对齐；AoS vs SoA,写：用两种布局读写（AoS/SoA）并对比带宽。,,,,,2026-02-18,2026-02-21,2026-02-27,2026-03-10
+2026-02-17,3,deliverable,讲,访存合并（coalescing）与对齐；AoS vs SoA,讲：什么访问模式会产生多次 memory transaction？,,,,,2026-02-18,2026-02-21,2026-02-27,2026-03-10
+2026-02-17,3,review,D-1,复习 Day 2,闭卷 2 分钟讲清楚 Day 2 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-02-18,4,summary,,shared memory 基础：tile、同步 __syncthreads,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-02-19,2026-02-22,2026-02-28,2026-03-11
+2026-02-18,4,deliverable,写,shared memory 基础：tile、同步 __syncthreads,写：naive matmul（小尺寸）+ shared tiled matmul（正确性优先）。,,,,,2026-02-19,2026-02-22,2026-02-28,2026-03-11
+2026-02-18,4,deliverable,讲,shared memory 基础：tile、同步 __syncthreads,讲：为什么 shared 能提速？什么时候反而慢？,,,,,2026-02-19,2026-02-22,2026-02-28,2026-03-11
+2026-02-18,4,review,D-1,复习 Day 3,闭卷 2 分钟讲清楚 Day 3 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-02-19,5,summary,,shared memory bank conflict 与 padding,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-02-20,2026-02-23,2026-03-01,2026-03-12
+2026-02-19,5,deliverable,写,shared memory bank conflict 与 padding,写：一个 shared transpose kernel（naive vs padding 避免 bank conflict）。,,,,,2026-02-20,2026-02-23,2026-03-01,2026-03-12
+2026-02-19,5,deliverable,测,shared memory bank conflict 与 padding,测：用 Nsight Compute 看 shared_load/store conflict 指标（或对比时间）。,,,,,2026-02-20,2026-02-23,2026-03-01,2026-03-12
+2026-02-19,5,review,D-1,复习 Day 4,闭卷 2 分钟讲清楚 Day 4 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-02-19,5,review,D-4,复习 Day 1,闭卷重写 Day 1 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-02-20,6,summary,,occupancy：寄存器/共享内存/线程数限制；block size 选择,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-02-21,2026-02-24,2026-03-02,2026-03-13
+2026-02-20,6,deliverable,写,occupancy：寄存器/共享内存/线程数限制；block size 选择,写：让同一 kernel 在不同 block size 下跑，记录 occupancy/时间（概念+实践）。,,,,,2026-02-21,2026-02-24,2026-03-02,2026-03-13
+2026-02-20,6,deliverable,讲,occupancy：寄存器/共享内存/线程数限制；block size 选择,讲：occupancy 高一定快吗？举反例（memory-bound）。,,,,,2026-02-21,2026-02-24,2026-03-02,2026-03-13
+2026-02-20,6,review,D-1,复习 Day 5,闭卷 2 分钟讲清楚 Day 5 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-02-20,6,review,D-4,复习 Day 2,闭卷重写 Day 2 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-02-21,7,summary,,周复盘：把本周 10 个概念写成 2 分钟口述稿,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-02-22,2026-02-25,2026-03-03,2026-03-14
+2026-02-21,7,deliverable,整理,周复盘：把本周 10 个概念写成 2 分钟口述稿,整理：索引/边界/对齐的常见 bug 清单。,,,,,2026-02-22,2026-02-25,2026-03-03,2026-03-14
+2026-02-21,7,deliverable,模拟面试,周复盘：把本周 10 个概念写成 2 分钟口述稿,模拟面试：给你一个慢 kernel（访存不合并/分支多），你如何定位？,,,,,2026-02-22,2026-02-25,2026-03-03,2026-03-14
+2026-02-21,7,review,D-1,复习 Day 6,闭卷 2 分钟讲清楚 Day 6 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-02-21,7,review,D-4,复习 Day 3,闭卷重写 Day 3 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-02-22,8,summary,,并行 reduction：tree reduction、warp shuffle 入门,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-02-23,2026-02-26,2026-03-04,2026-03-15
+2026-02-22,8,deliverable,写,并行 reduction：tree reduction、warp shuffle 入门,写：sum reduction（naive atomic vs block reduction）。,,,,,2026-02-23,2026-02-26,2026-03-04,2026-03-15
+2026-02-22,8,deliverable,讲,并行 reduction：tree reduction、warp shuffle 入门,讲：为什么 atomic 慢？如何减少原子次数？,,,,,2026-02-23,2026-02-26,2026-03-04,2026-03-15
+2026-02-22,8,review,D-1,复习 Day 7,闭卷 2 分钟讲清楚 Day 7 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-02-22,8,review,D-4,复习 Day 4,闭卷重写 Day 4 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-02-23,9,summary,,warp primitives：__shfl_*、warp-level reduction,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-02-24,2026-02-27,2026-03-05,2026-03-16
+2026-02-23,9,deliverable,写,warp primitives：__shfl_*、warp-level reduction,写：warp reduce（shuffle）并与 shared reduce 对比。,,,,,2026-02-24,2026-02-27,2026-03-05,2026-03-16
+2026-02-23,9,deliverable,讲,warp primitives：__shfl_*、warp-level reduction,讲：warp 同步与 __syncthreads 的区别。,,,,,2026-02-24,2026-02-27,2026-03-05,2026-03-16
+2026-02-23,9,review,D-1,复习 Day 8,闭卷 2 分钟讲清楚 Day 8 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-02-23,9,review,D-4,复习 Day 5,闭卷重写 Day 5 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-02-24,10,summary,,原子操作与一致性：atomicAdd、CAS，热点冲突,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-02-25,2026-02-28,2026-03-06,2026-03-17
+2026-02-24,10,deliverable,写,原子操作与一致性：atomicAdd、CAS，热点冲突,写：histogram（小桶数）并观察热点冲突；提出分桶/分块优化。,,,,,2026-02-25,2026-02-28,2026-03-06,2026-03-17
+2026-02-24,10,deliverable,讲,原子操作与一致性：atomicAdd、CAS，热点冲突,讲：什么时候用 block-private histogram？,,,,,2026-02-25,2026-02-28,2026-03-06,2026-03-17
+2026-02-24,10,review,D-1,复习 Day 9,闭卷 2 分钟讲清楚 Day 9 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-02-24,10,review,D-4,复习 Day 6,闭卷重写 Day 6 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-02-25,11,summary,,前缀和 scan（概念）：Blelloch scan，分块 + 递归,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-02-26,2026-03-01,2026-03-07,2026-03-18
+2026-02-25,11,deliverable,写,前缀和 scan（概念）：Blelloch scan，分块 + 递归,写：先做 CPU 版 scan，再写一个 block 内 scan（小规模）CUDA kernel。,,,,,2026-02-26,2026-03-01,2026-03-07,2026-03-18
+2026-02-25,11,deliverable,讲,前缀和 scan（概念）：Blelloch scan，分块 + 递归,讲：scan 和 reduction 的关系。,,,,,2026-02-26,2026-03-01,2026-03-07,2026-03-18
+2026-02-25,11,review,D-1,复习 Day 10,闭卷 2 分钟讲清楚 Day 10 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-02-25,11,review,D-4,复习 Day 7,闭卷重写 Day 7 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-02-26,12,summary,,异步与流水：streams、cudaMemcpyAsync、overlap,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-02-27,2026-03-02,2026-03-08,2026-03-19
+2026-02-26,12,deliverable,写,异步与流水：streams、cudaMemcpyAsync、overlap,写：两 stream overlap（H2D copy + kernel）示例（可用 pinned memory）。,,,,,2026-02-27,2026-03-02,2026-03-08,2026-03-19
+2026-02-26,12,deliverable,讲,异步与流水：streams、cudaMemcpyAsync、overlap,讲：什么条件才能 overlap？,,,,,2026-02-27,2026-03-02,2026-03-08,2026-03-19
+2026-02-26,12,review,D-1,复习 Day 11,闭卷 2 分钟讲清楚 Day 11 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-02-26,12,review,D-4,复习 Day 8,闭卷重写 Day 8 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-02-27,13,summary,,并发执行与 launch overhead：kernel fusion 直觉,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-02-28,2026-03-03,2026-03-09,2026-03-20
+2026-02-27,13,deliverable,写,并发执行与 launch overhead：kernel fusion 直觉,写：两段 kernel（A->B）与 fused kernel，对比时间（哪怕小提升）。,,,,,2026-02-28,2026-03-03,2026-03-09,2026-03-20
+2026-02-27,13,deliverable,讲,并发执行与 launch overhead：kernel fusion 直觉,讲：为什么 launch overhead 在小 batch 上更显著？,,,,,2026-02-28,2026-03-03,2026-03-09,2026-03-20
+2026-02-27,13,review,D-1,复习 Day 12,闭卷 2 分钟讲清楚 Day 12 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-02-27,13,review,D-4,复习 Day 9,闭卷重写 Day 9 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-02-28,14,summary,,周复盘：性能三件套：带宽/算力/占用率如何判别瓶颈,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-01,2026-03-04,2026-03-10,2026-03-21
+2026-02-28,14,deliverable,模拟面试,周复盘：性能三件套：带宽/算力/占用率如何判别瓶颈,模拟面试：给 roofline 数据，判断是 memory-bound 还是 compute-bound。,,,,,2026-03-01,2026-03-04,2026-03-10,2026-03-21
+2026-02-28,14,review,D-1,复习 Day 13,闭卷 2 分钟讲清楚 Day 13 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-02-28,14,review,D-4,复习 Day 10,闭卷重写 Day 10 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-01,15,summary,,softmax 数值稳定：max-subtraction、log-sum-exp,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-02,2026-03-05,2026-03-11,2026-03-22
+2026-03-01,15,deliverable,写,softmax 数值稳定：max-subtraction、log-sum-exp,写：CUDA softmax（对每行），实现稳定版；对比不稳定版。,,,,,2026-03-02,2026-03-05,2026-03-11,2026-03-22
+2026-03-01,15,deliverable,讲,softmax 数值稳定：max-subtraction、log-sum-exp,讲：为什么要减 max？溢出在哪一步发生？,,,,,2026-03-02,2026-03-05,2026-03-11,2026-03-22
+2026-03-01,15,review,D-1,复习 Day 14,闭卷 2 分钟讲清楚 Day 14 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-01,15,review,D-4,复习 Day 11,闭卷重写 Day 11 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-02,16,summary,,layernorm/rmsnorm：均值方差/均方根，融合思路,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-03,2026-03-06,2026-03-12,2026-03-23
+2026-03-02,16,deliverable,写,layernorm/rmsnorm：均值方差/均方根，融合思路,写：CUDA layernorm（每行），再尝试 fused（读一次写一次）。,,,,,2026-03-03,2026-03-06,2026-03-12,2026-03-23
+2026-03-02,16,deliverable,讲,layernorm/rmsnorm：均值方差/均方根，融合思路,讲：Welford 算法（概念即可）。,,,,,2026-03-03,2026-03-06,2026-03-12,2026-03-23
+2026-03-02,16,review,D-1,复习 Day 15,闭卷 2 分钟讲清楚 Day 15 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-02,16,review,D-4,复习 Day 12,闭卷重写 Day 12 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-03,17,summary,,GEMM 直觉：tile、寄存器 blocking、vectorized load,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-04,2026-03-07,2026-03-13,2026-03-24
+2026-03-03,17,deliverable,写,GEMM 直觉：tile、寄存器 blocking、vectorized load,写：小 GEMM（fp16 输入，fp32 accumulate），解释为什么要 accumulate 到 fp32。,,,,,2026-03-04,2026-03-07,2026-03-13,2026-03-24
+2026-03-03,17,deliverable,讲,GEMM 直觉：tile、寄存器 blocking、vectorized load,讲：Tensor Core 条件（概念：对齐/数据类型/矩阵尺寸）。,,,,,2026-03-04,2026-03-07,2026-03-13,2026-03-24
+2026-03-03,17,review,D-1,复习 Day 16,闭卷 2 分钟讲清楚 Day 16 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-03,17,review,D-4,复习 Day 13,闭卷重写 Day 13 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-04,18,summary,,attention 组成：QK^T、mask、softmax、PV,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-05,2026-03-08,2026-03-14,2026-03-25
+2026-03-04,18,deliverable,写,attention 组成：QK^T、mask、softmax、PV,写：先实现一个简化 attention（小尺寸，正确性）。,,,,,2026-03-05,2026-03-08,2026-03-14,2026-03-25
+2026-03-04,18,deliverable,讲,attention 组成：QK^T、mask、softmax、PV,讲：FlashAttention 的核心优化点是什么（不物化 QK/流式 softmax）。,,,,,2026-03-05,2026-03-08,2026-03-14,2026-03-25
+2026-03-04,18,review,D-1,复习 Day 17,闭卷 2 分钟讲清楚 Day 17 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-04,18,review,D-4,复习 Day 14,闭卷重写 Day 14 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-05,19,summary,,paged/indexed KV cache 直觉：indptr/indices gather,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-06,2026-03-09,2026-03-15,2026-03-26
+2026-03-05,19,deliverable,写,paged/indexed KV cache 直觉：indptr/indices gather,写：用 indices gather K/V 的 attention（参考 CSR），正确性优先。,,,,,2026-03-06,2026-03-09,2026-03-15,2026-03-26
+2026-03-05,19,deliverable,讲,paged/indexed KV cache 直觉：indptr/indices gather,讲：为什么 paged 会破坏连续访存？如何用分块/split-K 缓解？,,,,,2026-03-06,2026-03-09,2026-03-15,2026-03-26
+2026-03-05,19,review,D-1,复习 Day 18,闭卷 2 分钟讲清楚 Day 18 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-05,19,review,D-4,复习 Day 15,闭卷重写 Day 15 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-06,20,summary,,调试与正确性：race、越界、未初始化；cuda-memcheck 思路,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-07,2026-03-10,2026-03-16,2026-03-27
+2026-03-06,20,deliverable,写,调试与正确性：race、越界、未初始化；cuda-memcheck 思路,写：故意制造一个越界 bug，再定位修复（记录过程）。,,,,,2026-03-07,2026-03-10,2026-03-16,2026-03-27
+2026-03-06,20,deliverable,讲,调试与正确性：race、越界、未初始化；cuda-memcheck 思路,讲：如何写 kernel 的单元测试（随机输入+对比 torch/CPU）。,,,,,2026-03-07,2026-03-10,2026-03-16,2026-03-27
+2026-03-06,20,review,D-1,复习 Day 19,闭卷 2 分钟讲清楚 Day 19 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-06,20,review,D-4,复习 Day 16,闭卷重写 Day 16 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-07,21,summary,,周复盘：把 reduction/softmax/attention 画成算子图,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-08,2026-03-11,2026-03-17,2026-03-28
+2026-03-07,21,deliverable,模拟面试,周复盘：把 reduction/softmax/attention 画成算子图,模拟面试：现场讲清楚一个 attention kernel 的内存访问与瓶颈。,,,,,2026-03-08,2026-03-11,2026-03-17,2026-03-28
+2026-03-07,21,review,D-1,复习 Day 20,闭卷 2 分钟讲清楚 Day 20 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-07,21,review,D-4,复习 Day 17,闭卷重写 Day 17 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-08,22,summary,,Triton 编程模型：program_id、tl.arange、mask，指针算术,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-09,2026-03-12,2026-03-18,2026-03-29
+2026-03-08,22,deliverable,写,Triton 编程模型：program_id、tl.arange、mask，指针算术,写：Triton vector add（含 mask），对比 torch。,,,,,2026-03-09,2026-03-12,2026-03-18,2026-03-29
+2026-03-08,22,deliverable,讲,Triton 编程模型：program_id、tl.arange、mask，指针算术,讲：为什么 Triton 里“block”是编译期常量（tl.constexpr）很重要？,,,,,2026-03-09,2026-03-12,2026-03-18,2026-03-29
+2026-03-08,22,review,D-1,复习 Day 21,闭卷 2 分钟讲清楚 Day 21 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-08,22,review,D-4,复习 Day 18,闭卷重写 Day 18 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-09,23,summary,,Triton tl.load/tl.store、stride、layout（行主/列主）,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-10,2026-03-13,2026-03-19,2026-03-30
+2026-03-09,23,deliverable,写,Triton tl.load/tl.store、stride、layout（行主/列主）,写：Triton 2D copy/transpose（含 mask）。,,,,,2026-03-10,2026-03-13,2026-03-19,2026-03-30
+2026-03-09,23,deliverable,讲,Triton tl.load/tl.store、stride、layout（行主/列主）,讲：stride 与 view/reshape 的区别（以及如何导致错误）。,,,,,2026-03-10,2026-03-13,2026-03-19,2026-03-30
+2026-03-09,23,review,D-1,复习 Day 22,闭卷 2 分钟讲清楚 Day 22 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-09,23,review,D-4,复习 Day 19,闭卷重写 Day 19 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-10,24,summary,,Triton matmul 入门：BLOCK_M/N/K、num_warps,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-11,2026-03-14,2026-03-20,2026-03-31
+2026-03-10,24,deliverable,写,Triton matmul 入门：BLOCK_M/N/K、num_warps,写：Triton matmul（fp16），做简单基准（triton.testing.do_bench）。,,,,,2026-03-11,2026-03-14,2026-03-20,2026-03-31
+2026-03-10,24,deliverable,讲,Triton matmul 入门：BLOCK_M/N/K、num_warps,讲：num_warps 怎么影响并行度与寄存器压力？,,,,,2026-03-11,2026-03-14,2026-03-20,2026-03-31
+2026-03-10,24,review,D-1,复习 Day 23,闭卷 2 分钟讲清楚 Day 23 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-10,24,review,D-4,复习 Day 20,闭卷重写 Day 20 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-11,25,summary,,Triton reduction/softmax：稳定 softmax 的写法,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-12,2026-03-15,2026-03-21,2026-04-01
+2026-03-11,25,deliverable,写,Triton reduction/softmax：稳定 softmax 的写法,写：Triton softmax（row-wise），对比 torch.softmax。,,,,,2026-03-12,2026-03-15,2026-03-21,2026-04-01
+2026-03-11,25,deliverable,讲,Triton reduction/softmax：稳定 softmax 的写法,讲：mask 在 softmax 里怎么处理（-inf）。,,,,,2026-03-12,2026-03-15,2026-03-21,2026-04-01
+2026-03-11,25,review,D-1,复习 Day 24,闭卷 2 分钟讲清楚 Day 24 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-11,25,review,D-4,复习 Day 21,闭卷重写 Day 21 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-12,26,summary,,Triton autotune：key、configs、启发式,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-13,2026-03-16,2026-03-22,2026-04-02
+2026-03-12,26,deliverable,写,Triton autotune：key、configs、启发式,写：给 matmul 或 softmax 加 autotune（2–3 组 config）。,,,,,2026-03-13,2026-03-16,2026-03-22,2026-04-02
+2026-03-12,26,deliverable,讲,Triton autotune：key、configs、启发式,讲：为什么 autotune 的 key 选择很关键？,,,,,2026-03-13,2026-03-16,2026-03-22,2026-04-02
+2026-03-12,26,review,D-1,复习 Day 25,闭卷 2 分钟讲清楚 Day 25 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-12,26,review,D-4,复习 Day 22,闭卷重写 Day 22 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-13,27,summary,,Triton 与 torch.compile/动态图：限制与实践,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-14,2026-03-17,2026-03-23,2026-04-03
+2026-03-13,27,deliverable,写,Triton 与 torch.compile/动态图：限制与实践,写：把 Triton kernel 封装成 python API，写最小测试。,,,,,2026-03-14,2026-03-17,2026-03-23,2026-04-03
+2026-03-13,27,deliverable,讲,Triton 与 torch.compile/动态图：限制与实践,讲：Triton kernel 什么时候会触发 recompilation？如何减少？,,,,,2026-03-14,2026-03-17,2026-03-23,2026-04-03
+2026-03-13,27,review,D-1,复习 Day 26,闭卷 2 分钟讲清楚 Day 26 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-13,27,review,D-4,复习 Day 23,闭卷重写 Day 23 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-14,28,summary,,周复盘：Triton 基础套路总结（索引/stride/mask/constexpr）,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-15,2026-03-18,2026-03-24,2026-04-04
+2026-03-14,28,deliverable,模拟面试,周复盘：Triton 基础套路总结（索引/stride/mask/constexpr）,模拟面试：给一段 Triton kernel，让你找 bug（stride/mask 错）。,,,,,2026-03-15,2026-03-18,2026-03-24,2026-04-04
+2026-03-14,28,review,D-1,复习 Day 27,闭卷 2 分钟讲清楚 Day 27 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-14,28,review,D-4,复习 Day 24,闭卷重写 Day 24 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-15,29,summary,,Triton pipelining：num_stages、软件流水直觉,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-16,2026-03-19,2026-03-25,2026-04-05
+2026-03-15,29,deliverable,写,Triton pipelining：num_stages、软件流水直觉,写：调整 num_stages 比较性能（固定输入形状）。,,,,,2026-03-16,2026-03-19,2026-03-25,2026-04-05
+2026-03-15,29,deliverable,讲,Triton pipelining：num_stages、软件流水直觉,讲：为什么更深流水不一定更快？（寄存器/占用率）,,,,,2026-03-16,2026-03-19,2026-03-25,2026-04-05
+2026-03-15,29,review,D-1,复习 Day 28,闭卷 2 分钟讲清楚 Day 28 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-15,29,review,D-4,复习 Day 25,闭卷重写 Day 25 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-16,30,summary,,向量化与对齐：tl.multiple_of/tl.max_contiguous,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-17,2026-03-20,2026-03-26,2026-04-06
+2026-03-16,30,deliverable,写,向量化与对齐：tl.multiple_of/tl.max_contiguous,写：在 kernel 中加入 multiple_of/max_contiguous hint 并观测变化。,,,,,2026-03-17,2026-03-20,2026-03-26,2026-04-06
+2026-03-16,30,deliverable,讲,向量化与对齐：tl.multiple_of/tl.max_contiguous,讲：对齐为什么影响内存事务与吞吐？,,,,,2026-03-17,2026-03-20,2026-03-26,2026-04-06
+2026-03-16,30,review,D-1,复习 Day 29,闭卷 2 分钟讲清楚 Day 29 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-16,30,review,D-4,复习 Day 26,闭卷重写 Day 26 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-17,31,summary,,FP16/BF16/FP8 直觉：scale、accumulate、误差,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-18,2026-03-21,2026-03-27,2026-04-07
+2026-03-17,31,deliverable,写,FP16/BF16/FP8 直觉：scale、accumulate、误差,写：实现一个带 scale 的量化/反量化小函数（CPU 或 Triton）。,,,,,2026-03-18,2026-03-21,2026-03-27,2026-04-07
+2026-03-17,31,deliverable,讲,FP16/BF16/FP8 直觉：scale、accumulate、误差,讲：FP8 为什么需要 scale？KV cache FP8 的典型处理流程。,,,,,2026-03-18,2026-03-21,2026-03-27,2026-04-07
+2026-03-17,31,review,D-1,复习 Day 30,闭卷 2 分钟讲清楚 Day 30 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-17,31,review,D-4,复习 Day 27,闭卷重写 Day 27 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-18,32,summary,,split-K / 分块并行与归并（stage1/stage2）,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-19,2026-03-22,2026-03-28,2026-04-08
+2026-03-18,32,deliverable,写,split-K / 分块并行与归并（stage1/stage2）,写：模仿 decode_attention 的两阶段：stage1 写 partial + lse，stage2 合并。,,,,,2026-03-19,2026-03-22,2026-03-28,2026-04-08
+2026-03-18,32,deliverable,讲,split-K / 分块并行与归并（stage1/stage2）,讲：为什么要两阶段？如何保证数值稳定？,,,,,2026-03-19,2026-03-22,2026-03-28,2026-04-08
+2026-03-18,32,review,D-1,复习 Day 31,闭卷 2 分钟讲清楚 Day 31 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-18,32,review,D-4,复习 Day 28,闭卷重写 Day 28 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-19,33,summary,,Triton 注意力：prefill vs decode 的差异,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-20,2026-03-23,2026-03-29,2026-04-09
+2026-03-19,33,deliverable,写,Triton 注意力：prefill vs decode 的差异,写：实现一个简化 decode attention（只做 causal+无窗口）。,,,,,2026-03-20,2026-03-23,2026-03-29,2026-04-09
+2026-03-19,33,deliverable,讲,Triton 注意力：prefill vs decode 的差异,讲：prefill 是矩阵乘/大 tile；decode 是单 query + 大 KV gather。,,,,,2026-03-20,2026-03-23,2026-03-29,2026-04-09
+2026-03-19,33,review,D-1,复习 Day 32,闭卷 2 分钟讲清楚 Day 32 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-19,33,review,D-4,复习 Day 29,闭卷重写 Day 29 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-20,34,summary,,工程化：kernel 参数、单测、benchmark、回归,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-21,2026-03-24,2026-03-30,2026-04-10
+2026-03-20,34,deliverable,写,工程化：kernel 参数、单测、benchmark、回归,写：给你的 kernel 写 unittest（随机种子+误差阈值）。,,,,,2026-03-21,2026-03-24,2026-03-30,2026-04-10
+2026-03-20,34,deliverable,写,工程化：kernel 参数、单测、benchmark、回归,写：写一个 benchmark 脚本输出 p50/p99（最简）。,,,,,2026-03-21,2026-03-24,2026-03-30,2026-04-10
+2026-03-20,34,review,D-1,复习 Day 33,闭卷 2 分钟讲清楚 Day 33 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-20,34,review,D-4,复习 Day 30,闭卷重写 Day 30 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-21,35,summary,,周复盘：把你写过的 Triton kernel 整理成模板库,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-22,2026-03-25,2026-03-31,2026-04-11
+2026-03-21,35,deliverable,模拟面试,周复盘：把你写过的 Triton kernel 整理成模板库,模拟面试：给目标（加速 softmax/attention），你如何设计算法与指标？,,,,,2026-03-22,2026-03-25,2026-03-31,2026-04-11
+2026-03-21,35,review,D-1,复习 Day 34,闭卷 2 分钟讲清楚 Day 34 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-21,35,review,D-4,复习 Day 31,闭卷重写 Day 31 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-22,36,summary,,综合 1：实现一个“带 mask 的 stable softmax”并优化,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-23,2026-03-26,2026-04-01,2026-04-12
+2026-03-22,36,deliverable,写,综合 1：实现一个“带 mask 的 stable softmax”并优化,写：CUDA 或 Triton 任选，做 2 轮优化（减少读写/更好 tile）。,,,,,2026-03-23,2026-03-26,2026-04-01,2026-04-12
+2026-03-22,36,deliverable,讲,综合 1：实现一个“带 mask 的 stable softmax”并优化,讲：你优化前后的瓶颈对比。,,,,,2026-03-23,2026-03-26,2026-04-01,2026-04-12
+2026-03-22,36,review,D-1,复习 Day 35,闭卷 2 分钟讲清楚 Day 35 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-22,36,review,D-4,复习 Day 32,闭卷重写 Day 32 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-23,37,summary,,综合 2：实现一个简单 flash-style attention（流式 softmax）,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-24,2026-03-27,2026-04-02,2026-04-13
+2026-03-23,37,deliverable,写,综合 2：实现一个简单 flash-style attention（流式 softmax）,写：不要求极致性能，但要能解释为什么不需要存 QK。,,,,,2026-03-24,2026-03-27,2026-04-02,2026-04-13
+2026-03-23,37,deliverable,讲,综合 2：实现一个简单 flash-style attention（流式 softmax）,讲：和普通 attention 的内存差别。,,,,,2026-03-24,2026-03-27,2026-04-02,2026-04-13
+2026-03-23,37,review,D-1,复习 Day 36,闭卷 2 分钟讲清楚 Day 36 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-23,37,review,D-4,复习 Day 33,闭卷重写 Day 33 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-24,38,summary,,综合 3：实现 paged/indexed decode attention（indptr+indices）,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-25,2026-03-28,2026-04-03,2026-04-14
+2026-03-24,38,deliverable,写,综合 3：实现 paged/indexed decode attention（indptr+indices）,写：支持 kv_splits（split-K），输出中间 lse，再合并。,,,,,2026-03-25,2026-03-28,2026-04-03,2026-04-14
+2026-03-24,38,deliverable,讲,综合 3：实现 paged/indexed decode attention（indptr+indices）,讲：为什么它更像服务端引擎里的 kernel？,,,,,2026-03-25,2026-03-28,2026-04-03,2026-04-14
+2026-03-24,38,review,D-1,复习 Day 37,闭卷 2 分钟讲清楚 Day 37 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-24,38,review,D-4,复习 Day 34,闭卷重写 Day 34 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-25,39,summary,,综合 4：KV cache 写入/reshape（slot_mapping 思路）,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-26,2026-03-29,2026-04-04,2026-04-15
+2026-03-25,39,deliverable,写,综合 4：KV cache 写入/reshape（slot_mapping 思路）,写：实现一个简化 reshape_and_cache（Triton）。,,,,,2026-03-26,2026-03-29,2026-04-04,2026-04-15
+2026-03-25,39,deliverable,讲,综合 4：KV cache 写入/reshape（slot_mapping 思路）,讲：slot_mapping 是什么？block_idx/block_offset 如何定位 cache。,,,,,2026-03-26,2026-03-29,2026-04-04,2026-04-15
+2026-03-25,39,review,D-1,复习 Day 38,闭卷 2 分钟讲清楚 Day 38 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-25,39,review,D-4,复习 Day 35,闭卷重写 Day 35 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-26,40,summary,,性能面试：看 Nsight 图/表定位瓶颈,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-27,2026-03-30,2026-04-05,2026-04-16
+2026-03-26,40,deliverable,练,性能面试：看 Nsight 图/表定位瓶颈,练：准备 6 张你自己的 profiling 截图（或文字记录），每张 2 分钟讲清楚。,,,,,2026-03-27,2026-03-30,2026-04-05,2026-04-16
+2026-03-26,40,review,D-1,复习 Day 39,闭卷 2 分钟讲清楚 Day 39 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-26,40,review,D-4,复习 Day 36,闭卷重写 Day 36 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-27,41,summary,,查漏补缺：把最不熟的 6 个点补齐,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-28,2026-03-31,2026-04-06,2026-04-17
+2026-03-27,41,deliverable,补,查漏补缺：把最不熟的 6 个点补齐,补：bank conflict / atomic / occupancy / autotune / split-K / fp8 任选四。,,,,,2026-03-28,2026-03-31,2026-04-06,2026-04-17
+2026-03-27,41,review,D-1,复习 Day 40,闭卷 2 分钟讲清楚 Day 40 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-27,41,review,D-4,复习 Day 37,闭卷重写 Day 37 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-28,42,summary,,系统化整理：写 1 页“GPU Kernel 面试速记”,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-29,2026-04-01,2026-04-07,2026-04-18
+2026-03-28,42,deliverable,输出,系统化整理：写 1 页“GPU Kernel 面试速记”,输出：coalescing、shared、occupancy、warp、softmax 稳定、split-K、indices gather。,,,,,2026-03-29,2026-04-01,2026-04-07,2026-04-18
+2026-03-28,42,review,D-1,复习 Day 41,闭卷 2 分钟讲清楚 Day 41 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-28,42,review,D-4,复习 Day 38,闭卷重写 Day 38 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-29,43,summary,,终局模拟面试 1：CUDA kernel 现场手写 + 口述优化,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-30,2026-04-02,2026-04-08,2026-04-19
+2026-03-29,43,deliverable,题型,终局模拟面试 1：CUDA kernel 现场手写 + 口述优化,题型：reduction/softmax/matmul 三选一，要求正确性+性能思路。,,,,,2026-03-30,2026-04-02,2026-04-08,2026-04-19
+2026-03-29,43,review,D-1,复习 Day 42,闭卷 2 分钟讲清楚 Day 42 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-29,43,review,D-4,复习 Day 39,闭卷重写 Day 39 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-30,44,summary,,终局模拟面试 2：Triton kernel 现场手写 + autotune 方案,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-03-31,2026-04-03,2026-04-09,2026-04-20
+2026-03-30,44,deliverable,题型,终局模拟面试 2：Triton kernel 现场手写 + autotune 方案,题型：softmax 或 indexed gather + reduce。,,,,,2026-03-31,2026-04-03,2026-04-09,2026-04-20
+2026-03-30,44,review,D-1,复习 Day 43,闭卷 2 分钟讲清楚 Day 43 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-30,44,review,D-4,复习 Day 40,闭卷重写 Day 40 的最小 kernel（索引+mask+边界）。,,20,,,,,,
+2026-03-31,45,summary,,收官：整理个人作品集（kernel 列表 + benchmark 数据 + 经验总结）,当日目标：完成至少 1 个可运行 kernel + 1 次 profiling + 1 次 2 分钟口述。,,,,,2026-04-01,2026-04-04,2026-04-10,2026-04-21
+2026-03-31,45,deliverable,输出,收官：整理个人作品集（kernel 列表 + benchmark 数据 + 经验总结）,输出：README（你写过哪些 kernel、各自指标、踩坑与修复）。,,,,,2026-04-01,2026-04-04,2026-04-10,2026-04-21
+2026-03-31,45,review,D-1,复习 Day 44,闭卷 2 分钟讲清楚 Day 44 的 1 个概念 + 1 个优化点。,,10,,,,,,
+2026-03-31,45,review,D-4,复习 Day 41,闭卷重写 Day 41 的最小 kernel（索引+mask+边界）。,,20,,,,,,
