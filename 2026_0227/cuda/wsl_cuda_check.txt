@@ -1,0 +1,52 @@
+++ echo VENV=/mnt/d/vllm/vllm
+VENV=/mnt/d/vllm/vllm
+++ echo PATH_first20:
+PATH_first20:
+++ echo '/mnt/d/vllm/vllm/bin:/mnt/d/vllm/vllm/bin:/mnt/d/vllm/vllm/bin:/mnt/d/vllm/vllm/bin:/home/liuzhe/.cursor-server/bin/4ca9b38c6c97d4243bf0c61e51426667cb964bd0/bin/remote-cli:/home/liuzhe/.cursor-server/bin/4ca9b38c6c97d4243bf0c61e51426667cb964bd0/bin/remote-cli:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin:/mnt/c/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/libnvvp:/mnt/d/Program Files/Python312/Scripts/:/mnt/d/Program Files/Python312/:/mnt/c/Windows/system32:/mnt/c/Windows:/mnt/c/Windows/System32/Wbem:/mnt/c/Windows/System32/WindowsPowerShell/v1.0/:/mnt/c/Windows/System32/OpenSSH/:/mnt/c/Program Files/NVIDIA Corporation/NVIDIA app/NvDLISR:/mnt/c/Program Files/dotnet/:/mnt/d/Program Files/nodejs/:/mnt/c/ProgramData/chocolatey/bin:/mnt/c/Program Files/Microsoft SQL Server/150/Tools/Binn/:/mnt/c/Program Files/Microsoft SQL Server/Client SDK/ODBC/170/Tools/Binn/:/mnt/c/Program Files (x86)/Windows Kits/10/Windows Performance Toolkit/:/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64:/mnt/c/Program Files/NVIDIA Corporation/Nsight Compute 2025.1.0/:/mnt/c/Program Files (x86)/NVIDIA Corporation/PhysX/Common:/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/d/Users/12618/AppData/Local/Programs/cursor/resources/app/bin:/mnt/d/Program Files/Git/cmd:/mnt/d/Program Files/cursor/resources/app/bin:/mnt/c/Users/12618/AppData/Local/Microsoft/WindowsApps:/mnt/d/Users/12618/AppData/Local/Programs/Microsoft VS Code/bin:/mnt/c/Users/12618/AppData/Roaming/npm:/mnt/c/Users/12618/.dotnet/tools:/mnt/d/Users/12618/AppData/Local/Programs/cursor/resources/app/bin:/snap/bin'
+++ tr : '\n'
+++ head -n 20
+/mnt/d/vllm/vllm/bin
+/mnt/d/vllm/vllm/bin
+/mnt/d/vllm/vllm/bin
+/mnt/d/vllm/vllm/bin
+/home/liuzhe/.cursor-server/bin/4ca9b38c6c97d4243bf0c61e51426667cb964bd0/bin/remote-cli
+/home/liuzhe/.cursor-server/bin/4ca9b38c6c97d4243bf0c61e51426667cb964bd0/bin/remote-cli
+/usr/local/sbin
+/usr/local/bin
+/usr/sbin
+/usr/bin
+/sbin
+/bin
+/usr/games
+/usr/local/games
+/usr/lib/wsl/lib
+/mnt/c/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin
+/mnt/c/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/libnvvp
+/mnt/d/Program Files/Python312/Scripts/
+/mnt/d/Program Files/Python312/
+/mnt/c/Windows/system32
+++ echo ----
+----
+++ echo 'which nvcc:'
+which nvcc:
+++ which nvcc
+++ echo nvcc_not_in_PATH
+nvcc_not_in_PATH
+++ echo 'nvcc --version:'
+nvcc --version:
+++ nvcc --version
+++ '[' -x /usr/lib/command-not-found ']'
+++ /usr/lib/command-not-found -- nvcc
+Command 'nvcc' not found, but can be installed with:
+apt install nvidia-cuda-toolkit
+++ return 127
+++ true
+++ echo ----
+----
+++ echo nvidia-smi:
+nvidia-smi:
+++ nvidia-smi
+Failed to initialize NVML: GPU access blocked by the operating system
+Failed to properly shut down NVML: GPU access blocked by the operating system
+
+++ true

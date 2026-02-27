@@ -1,0 +1,33 @@
+++ echo nvcc_path_check:
+nvcc_path_check:
+++ ls --color=auto -l /usr/local/cuda/bin/nvcc
+-rwxr-xr-x 1 root root 24828456 Feb 22  2025 /usr/local/cuda/bin/nvcc
+++ echo nvcc_version:
+nvcc_version:
+++ /usr/local/cuda/bin/nvcc --version
+++ head -n 30
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2025 NVIDIA Corporation
+Built on Fri_Feb_21_20:23:50_PST_2025
+Cuda compilation tools, release 12.8, V12.8.93
+Build cuda_12.8.r12.8/compiler.35583870_0
+++ echo compile:
+compile:
+++ /usr/local/cuda/bin/nvcc -O3 -std=c++17 day1_vector_add.cu -o day1_vector_add
+nvcc warning : Support for offline compilation for architectures prior to '<compute/sm/lto>_75' will be removed in a future release (Use -Wno-deprecated-gpu-targets to suppress warning).
+++ echo run_small:
+run_small:
+++ ./day1_vector_add 10000000
+N=10000000
+blockDim=128: time=0.2345 ms, effective_bw=511.74 GB/s
+blockDim=256: time=0.2339 ms, effective_bw=513.01 GB/s
+blockDim=512: time=0.2384 ms, effective_bw=503.29 GB/s
+Correctness OK. max_abs_err=1.19209e-07
+++ echo run_default:
+run_default:
+++ ./day1_vector_add
+N=16777216
+blockDim=128: time=0.3283 ms, effective_bw=613.28 GB/s
+blockDim=256: time=0.3294 ms, effective_bw=611.26 GB/s
+blockDim=512: time=0.3286 ms, effective_bw=612.65 GB/s
+Correctness OK. max_abs_err=1.19209e-07

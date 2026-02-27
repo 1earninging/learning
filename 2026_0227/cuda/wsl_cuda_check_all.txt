@@ -1,0 +1,39 @@
++++ whoami
+++ echo whoami=liuzhe
+whoami=liuzhe
+++ uname -a
+Linux lzdevice 6.6.87.2-microsoft-standard-WSL2 #1 SMP PREEMPT_DYNAMIC Thu Jun  5 18:30:46 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
+++ echo 'which nvcc:'
+which nvcc:
+++ which nvcc
+++ echo nvcc_not_in_PATH
+nvcc_not_in_PATH
+++ echo 'ls /usr/local/cuda*:'
+ls /usr/local/cuda*:
+++ ls --color=auto -ld /usr/local/cuda /usr/local/cuda-12 /usr/local/cuda-12.8
+lrwxrwxrwx  1 root root   22 Jul 31  2025 /usr/local/cuda -> /etc/alternatives/cuda
+lrwxrwxrwx  1 root root   25 Jul 31  2025 /usr/local/cuda-12 -> /etc/alternatives/cuda-12
+drwxr-xr-x 15 root root 4096 Jul 31  2025 /usr/local/cuda-12.8
+++ echo nvidia-smi:
+nvidia-smi:
+++ nvidia-smi
+Fri Feb 27 23:26:44 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.152                Driver Version: 573.24         CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 5080 ...    On  |   00000000:02:00.0  On |                  N/A |
+| N/A   45C    P8             19W /   95W |    2286MiB /  16303MiB |     18%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
