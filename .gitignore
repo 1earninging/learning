@@ -4,3 +4,5 @@ sglang-main/
 MindIE-LLM/
 sglang/
 vllm/
+vllm-omni/
+sglang-omni/

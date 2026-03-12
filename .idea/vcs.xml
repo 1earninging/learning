@@ -2,7 +2,10 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/MindIE-LLM" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/sglang" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/sglang-omni" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/vllm" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/vllm-omni" vcs="Git" />
   </component>
 </project>

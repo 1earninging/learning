@@ -1,0 +1,53 @@
+@startuml
+title SGLang vs vLLM - Prefill->Decode KV 传输关键路径对齐（对比时序）
+
+skinparam maxMessageSize 160
+skinparam sequenceMessageAlign center
+
+== vLLM v1（kv_connector） ==
+box "vLLM v1" #EEF7FF
+participant "Decode Scheduler\n(KVCacheManager)" as V_DS
+participant "Decode KVConnector\n(scheduler)" as V_DCS
+participant "Decode Worker\n(connector worker)" as V_DW
+participant "Transfer Backend\n(Mooncake/NIXL)" as V_X
+end box
+
+== SGLang（disaggregation sender/receiver） ==
+box "SGLang" #FFF7EE
+participant "Prefill Scheduler" as S_P
+participant "KV Sender" as S_S
+participant "Transfer Backend\n(BaseKVManager)" as S_X
+participant "Decode PreallocQueue" as S_PQ
+participant "KV Receiver" as S_R
+end box
+
+== 1) 计算外部可用 prefix / 预留空间 ==
+V_DS -> V_DCS : get_num_new_matched_tokens()
+V_DS -> V_DS : allocate_slots(num_external_tokens)
+V_DS -> V_DCS : update_state_after_alloc()
+
+S_P -> S_PQ : pre_alloc(req)\n(预分配 loc/pages)
+
+== 2) 触发传输（核心：索引/块号） ==
+V_DCS -> V_DW : build/bind metadata\n(local_block_ids,...)
+V_DW -> V_X : start_load_kv()\n按 block_id 拷贝/RDMA
+
+S_P -> S_S : send(page_indices,\nstate_indices)
+S_S -> S_X : transfer pages\n写入 decode 侧预分配区域
+
+== 3) 传输完成通知与后续执行 ==
+V_DW -> V_DCS : get_finished()
+V_DCS -> V_DS : update_connector_output()
+
+S_R -> S_PQ : poll() -> Success\ncommit metadata
+
+note over V_DS,S_PQ
+  共同点：最终都是“把 prefix KV 写入 decode 侧的 KV buffer”，
+  然后 decode 继续算剩余 prefill 或直接进入 decode。
+  差异点：vLLM 以 connector 生命周期与 block_id/slot_mapping 为中心；
+         SGLang 以预分配 loc/pages + page_indices 驱动传输为中心。
+end note
+
+@enduml
+
+

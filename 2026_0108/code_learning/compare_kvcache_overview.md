@@ -42,13 +42,6 @@
 - **SGLang：PD disaggregation（prefill send chunk / decode prealloc+recv）**：见 `sglang_kv_transfer_sequence.puml`
 - **对比：关键阶段对齐**：见 `compare_kv_transfer_sequence.puml`
 
-### KV 传输细化视图（实现细节 / 边界条件）
-- **vLLM：KV connector 数据流（Mooncake vs NIXL，host buffer/handshake/异构 TP）**：见 `vllm_kv_transfer_dataflow.puml`
-- **vLLM：请求级 KV 传输状态机（async recv/send、超时、invalid blocks）**：见 `vllm_kv_transfer_state_machine.puml`
-- **SGLang：PD disagg 数据流（chunk/page_indices/state_indices、prealloc/poll）**：见 `sglang_kv_transfer_dataflow.puml`
-- **SGLang：请求级状态机（prefill/ decode 两端队列流转 + 失败回收）**：见 `sglang_kv_transfer_state_machine.puml`
-- **对比：异构 TP、layout permute、host buffer、回收策略差异**：见 `compare_kv_transfer_edge_cases.puml`
-
 ---
 
 ## 代码锚点（读源码建议从这里开始）
@@ -75,34 +68,5 @@
 - **PD disaggregation 传输路径**
   - `sglang/python/sglang/srt/disaggregation/prefill.py`
   - `sglang/python/sglang/srt/disaggregation/decode.py`
-
----
-
-## KV 传输：更细化的实现对齐（建议按这 4 个维度读）
-
-### 维度 A：内存注册与“地址模型”（transfer backend 看到的是什么）
-- **vLLM（kv_connector）**
-  - Worker 侧通常会把 KV cache tensor（或 host_xfer_buffer）注册给后端，然后传输时按 **block_id -> (base_addr + block_id * block_len)** 计算 (src_ptr, dst_ptr)。
-  - Mooncake：`batch_register_memory()` 注册 base pointers，发送时 `batch_transfer_sync_write()` 直接做批量写。
-  - NIXL：register_memory + xfer descs + prep_xfer_dlist；当 device 内存不可直接注册或配置为 `kv_buffer_device=cpu` 时，走 **host_xfer_buffers + copy_blocks(d2h/h2d)**。
-- **SGLang（disaggregation sender/receiver）**
-  - 通过 `KVCache.get_contiguous_buf_infos()` 暴露 **每层 KV buffer 的 data_ptr/len/item_len** 给 transfer backend manager。
-  - per-request 发送的核心不是“KV tensor 本体”，而是 **page_indices（以及最后一块可带 state_indices/metadata_buffer_index）**，后端把指定 pages 写入 decode 侧预分配区域。
-
-### 维度 B：索引单位与映射（block_id vs page_indices vs loc）
-- **vLLM**：以 `block_id` 为第一公民，BlockTable/slot_mapping 负责把 token position 映射到 KV 物理位置。
-- **SGLang**：以 `loc`/`page_indices` 为第一公民，`ReqToTokenPool.req_to_token` 存 token->loc；`kv_to_page_indices()` 将 loc 映射为 page。
-
-### 维度 C：异构 TP / KV layout / block_size mismatch 的处理策略
-- **vLLM（NIXL）**
-  - handshake 会交换 `kv_cache_layout`、`block_size`、`block_lens` 等；必要时启用 `enable_permute_local_kv` 在接收后做 layout 纠正（例如 HND<->NHD）。
-  - 允许 “logical block_size != kernel block_size”，会在 worker 侧调整并做 logical->physical block id 映射（详见 NIXL 的 blocksize_post_process/physical block 逻辑）。
-- **SGLang**
-  - PD disagg 的核心是按 `page_size`（token-per-page）传输；chunk 发送时会把尾部不完整 page 延迟到下次发送（避免 partial page 语义复杂化）。
-  - 对 hybrid 模型（SWA/Mamba/NSA）会额外发送 state_indices，保证 decode 侧能恢复必要的状态。
-
-### 维度 D：生命周期与失败回收（谁负责释放/何时释放）
-- **vLLM**：connector 允许“延迟释放 block”（request_finished 返回 delay_free）；worker 侧可能异步 send/recv，支持超时与 invalid block 上报。
-- **SGLang**：prefill/inflight/transfer 队列轮询；成功时 `release_kv_cache` 解锁并回收 metadata buffer；失败则 abort 并显式释放/不插入缓存。
 
 

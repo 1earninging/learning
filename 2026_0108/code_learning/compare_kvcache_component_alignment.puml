@@ -1,0 +1,55 @@
+@startuml
+title SGLang vs vLLM - KVCache 组件对齐（对比视图）
+
+left to right direction
+skinparam componentStyle rectangle
+skinparam wrapWidth 260
+
+package "vLLM v1" {
+  [Scheduler] as v_sched
+  [KVCacheManager\n(block allocation)] as v_kvm
+  [BlockPool + PrefixCache\n(block_hash, ref_cnt)] as v_pool
+  [BlockTable/slot_mapping] as v_btab
+  [KVConnector\n(kv_transfer)] as v_conn
+}
+
+package "SGLang" {
+  [Scheduler] as s_sched
+  [ModelRunner\n(init_memory_pool)] as s_runner
+  [ReqToTokenPool] as s_r2t
+  [TokenToKVPoolAllocator\n(paged alloc)] as s_alloc
+  [RadixCache\n(prefix match/split/evict)] as s_radix
+  [HiCache (L1/L2/L3)\n(prefetch/write-back)] as s_hicache
+  [Disagg Sender/Receiver\n(page_indices transfer)] as s_disagg
+}
+
+' alignment notes
+v_sched -[hidden]-> s_sched
+v_kvm -[hidden]-> s_runner
+v_pool -[hidden]-> s_radix
+v_btab -[hidden]-> s_r2t
+v_conn -[hidden]-> s_disagg
+
+v_sched --> v_kvm : allocate_slots()\n+ ext_comp
+v_kvm --> v_pool : get_new_blocks()\ncache_full_blocks()
+v_kvm --> v_btab : build block_table\nslot_mapping
+v_conn ..> v_kvm : external KV\n(async load/save)
+
+s_sched --> s_runner : run_batch()
+s_runner --> s_r2t : write(req_to_token)
+s_runner --> s_alloc : alloc_extend/alloc_decode
+s_radix --> s_r2t : values = kv_indices
+s_hicache ..> s_radix : HiRadixTree metadata
+s_disagg ..> s_r2t : page_indices\n映射到预分配 loc
+
+note bottom
+  对齐关系（粗粒度）：
+  - vLLM BlockTable/slot_mapping  <->  SGLang ReqToTokenPool(loc mapping)
+  - vLLM block-hash prefix cache  <->  SGLang RadixTree prefix cache
+  - vLLM kv_connector  <->  SGLang disaggregation sender/receiver（索引驱动传输）
+  - SGLang HiCache(L2/L3) 是额外的“分层缓存/复用”能力
+end note
+
+@enduml
+
+

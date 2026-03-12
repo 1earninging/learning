@@ -1,0 +1,59 @@
+@startuml
+title vLLM v1 - Disaggregated Prefill / KV Transfer（时序视图，抽象）
+
+skinparam maxMessageSize 140
+skinparam sequenceMessageAlign center
+
+participant "Client" as C
+participant "Decode Engine\n(vLLM instance D)" as D
+participant "Decode Scheduler\n(KVCacheManager)" as DS
+participant "Decode KVConnector\n(scheduler side)" as DCS
+participant "Decode Worker\n(KVConnector worker side)" as DCW
+
+participant "Prefill Engine\n(vLLM instance P)" as P
+participant "Prefill Scheduler\n(KVCacheManager)" as PS
+participant "Prefill KVConnector\n(worker side)" as PCW
+participant "Transfer Backend\n(Mooncake/NIXL/...)" as X
+
+== 0. 请求进入 Decode（携带 remote prefill 参数） ==
+C -> D : generate(prompt, kv_transfer_params=do_remote_prefill,...)
+D -> DS : step() schedule
+
+== 1. Decode 侧判断 external KV 可用范围 ==
+DS -> DCS : get_num_new_matched_tokens(req, num_computed_tokens)
+note right of DCS
+返回：
+ - num_external_tokens（可从外部加载的 prefix tokens）
+ - 是否 async load
+end note
+
+DS -> DS : allocate_slots(..., num_external_computed_tokens)
+DS -> DCS : update_state_after_alloc(req, blocks, num_external_tokens)
+
+== 2. Decode 将 connector metadata 下发给 worker，启动拉取 ==
+DS -> DCS : build_connector_meta(scheduler_output)
+DCS -> DCW : bind_connector_metadata(meta)
+DCW -> X : start_load_kv()\n(按 block_id/page 计算地址并 RDMA/copy)
+
+== 3. Forward 期间按 layer 同步/等待 KV 到位（可选 layer-wise） ==
+D -> DCW : start_load_kv(forward_context)
+loop per layer
+  D -> DCW : wait_for_layer_load(layer_name)\n(某些 connector 支持)
+  D -> D : attention 计算
+end
+
+== 4. KV 拉取完成，Decode 继续完成 prefill 剩余部分并进入 decode ==
+DCW -> DCS : get_finished()\n(recving done ids)
+DCS -> DS : update_connector_output(...)
+DS -> D : run remaining prefill / decode steps
+
+== 5. 请求结束：Prefill/Decode 侧可触发反向传输（remote decode） ==
+DS -> DCS : request_finished(req, block_ids)
+alt do_remote_decode
+  DCS -> DCW : metadata: reqs_to_send
+  DCW -> X : send_kv_to_other_side()\n(按 block_id 批量写)
+end
+
+@enduml
+
+
